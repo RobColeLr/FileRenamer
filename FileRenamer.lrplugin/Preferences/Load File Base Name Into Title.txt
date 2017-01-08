@@ -1,0 +1,247 @@
+--[[
+        Plugin configuration file (aka 'Advanced Settings'; sometimes called "preference backing file").
+        
+        Note: Named members of return table are accessible in source code as:
+        
+            app:getPref( name )
+            
+            provided there is no app:initPref( name, val ) or app:setPref( name, val ) statements executed prior,
+            which hide/override the named members in this file.
+            
+            for example, in this file, if you write:
+                
+                _t.foo = "bar" -- test pref.
+                
+            then the value of
+                
+                app:getPref( 'foo' ) -- get the value for the preference named "foo", from wherever it is defined.
+                
+            in various places in the code, will be
+            
+                "bar"
+                
+            (the idea being that the programmer can move preferences from the backing file to the UI without changing the code that uses it - iow: just add the UI for it).
+            
+        *** Important: when editing, take care to assure punctuation and syntax are not disturbed. In comments, it doesn't matter, but in the rest - every character is meaningful,
+                       including spaces, commas, brackets, dots, underscores...
+                       
+        There are 2 kinds of comments:
+        1. single line
+        2. multi-line (like this one).
+        
+        lines beginning with '--' (without the apostrophes) are single line comments.
+        lines beginning with '- - [ [' (without the spaces) begin multi-line comments, which end with '- - ] ]' (without the spaces).
+
+        
+        Speaking of quotes and apostrophe's: they're equivalent - they both delimit text strings (but you can nest double-quotes within apostrophe-delimited strings and vice versa,
+        without escaping, examples:
+        local mystring = 'This is a "string"' -- ok
+        local mystring = "This is a 'string'" -- ok
+        local mystring = 'This is a 'string'' -- not ok
+        local mystring = "This is a "string"" -- not ok
+        local mystring = 'This is a \'string\'' -- ok (apostrophes have been "escaped" via backslash character)
+        local mystring = "This is a \"string\"" -- ok (double-quotes are escaped)
+
+        
+        Definitions:
+        
+        * Comment-out: to prepend '--' to a non-comment line making it a comment, or to wrap one or more non-comment lines with '- - [ [' & '- - ] ]'. This turns non-comment lines into comments, rendering them null & void for all practical purposes.
+        * Un-comment: to remove the '--' at the front of a comment line thus enabling it to take effect (or removing '- - [ [' & '- - ] ]' wrappage).
+        
+        
+        This configuration file is interpreted in the context of the Elare Plugin Framework - most Lr namespaces are available, and all standard Elare interface objects are available, including:
+        
+        String/text formatting:
+        * str:fmtx - a derivative of Lightroom's LOC function - same syntax for specifying placeholders in the format string..., e.g.
+            str:fmtx( "Hello ^1^2", "World", "!!!" ) -- will create the string: "Hello World!!!".
+          string.format 'C' string formatting function, e.g.
+            string.format( "%u times", count ) -- outputs "5 times", if count is 5.
+        Debugging (ignored if advanced debugging is not enabled) :
+        * Debug.lognpp - log any number of parameters in a "pretty" format, e.g.
+            Debug.lognpp( "before", devSets, "after", photo:getDevelopSettings() ) -- log before and after develop settings.
+        * Debug.pause and Debug.pauseIf - shows values of variables, if any, and presents options to keep going or stop, e.g.
+            Debug.pause( myvar ) -- stop execution temporarily, and show the value of myvar variable.
+            Debug.pause() -- show nothing, but confirm execution has reached this point.
+        Logging to plugin log file:
+        * app:log and app:logv log file methods, e.g.
+            app:log( "Here it is: ^1", it ) -- log it
+            app:logv( "hmm..." ) -- log hmm... - included in log file only if verbose logging is enabled.
+            
+        and MANY more, but the luadoc is out of date - see source code itself, or examples here-in, for reference.
+          
+        Reference documentation can be obtained by reading the API doc, downloadable as part of the Lightroom SDK, from here:
+        
+        http://www.adobe.com/devnet/photoshoplightroom.html
+        
+        Get lua language documentation from www.lua.org
+--]]
+
+
+-- declare return table
+local _t = {}
+
+
+
+--[[
+        Id of recipient field.
+--]]
+_t.formattedMetadataFieldIdForRenaming = 'title'
+
+
+
+--[[
+        type and id of source field.
+        
+        Examples:
+            _t.formattedMetadataFieldIdForSource = { type="fmt", id='title' } -- source field is "title", which is pre-formatted metadata.
+            _t.formattedMetadataFieldIdForSource = { type="fmt", id='headline' } -- source field is "title", which is pre-formatted metadata.
+            _t.formattedMetadataFieldIdForSource = { type="fmt", id='folderName' } -- source field is "folder name", which is pre-formatted metadata.
+            _t.formattedMetadataFieldIdForSource = { type="fmt", id='fileName' } -- source field is "filename", which is pre-formatted metadata.
+            _t.formattedMetadataFieldIdForSource = { type="raw", id='path' } -- source field is "path", which is raw text (not pre-formatted) metadata.
+--]]
+_t.formattedMetadataFieldIdForSource = { type="custom", id='baseName', fmtIds={ 'fileName' } }
+
+
+
+--[[
+        *** Instructions:
+        
+        Declare persistent local variables here, if desired.
+--]]
+local cache -- metadata cache.
+local fieldGetter
+local fieldId
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to get requisite view items to acquire inputs for your renamer from user, if desired.
+        
+        params:
+            call - elare call object (normally not needed).
+            props - ui property table (needed for inputs to be used in rename dialog box).
+--]]
+_t.viewItems = nil -- function() return nil end
+
+
+
+local function getCustomField( cache, photo, id )
+    local customField
+    if id == 'baseName' then
+        local filename = cache:getFormattedMetadata( photo, 'fileName' ) -- file-name must be specified as fmt-id, so init function adds it to cache.
+        return LrPathUtils.removeExtension( filename )
+    else
+        Debug.pause( id )
+    end
+    return nil
+end
+
+
+
+--[[
+        Called once per run, so can be used to initialize persistent local variables.
+        
+        params:
+        
+            call
+            props
+            
+        returns:
+        
+            nil or error message
+--]]
+_t.init = function( params )
+    app:callingAssert( params ~= nil, "no init params" )
+    local photos = params.photos or error( "no photos" )
+    local fieldSpec = app:getPref( 'formattedMetadataFieldIdForSource' ) -- i.e. _t.formattedMetadataFieldIdForSource
+    if fieldSpec then
+        if type( fieldSpec ) == 'string' then -- legacy.
+            fieldId = fieldSpec
+            cache = lrMeta:createCache{ photos=photos, fmtIds={ fieldId } }
+            fieldGetter = cache.getFormattedMetadata
+        elseif type( fieldSpec ) == 'table' then -- the new way.
+            if fieldSpec.type == 'fmt' then
+                fieldId = fieldSpec.id or error( "no field id specified for formatted metadata" )
+                cache = lrMeta:createCache{ photos=photos, fmtIds={ fieldId } }
+                fieldGetter = cache.getFormattedMetadata
+            elseif fieldSpec.type == 'raw' then
+                fieldId = fieldSpec.id or error( "no field id specified for raw metadata" )
+                cache = lrMeta:createCache{ photos=photos, rawIds={ fieldId } }
+                fieldGetter = cache.getRawMetadata
+            elseif fieldSpec.type == 'custom' then
+                fieldId = fieldSpec.id or error( "no field id specified for raw metadata" )
+                cache = lrMeta:createCache{ photos=photos, rawIds=fieldSpec.rawIds, fmtIds=fieldSpec.fmtIds }
+                fieldGetter = getCustomField
+            else
+                app:error( "Invalid type: ^1", fieldSpec )
+            end
+        else
+            app:error( "'formattedMetadataFieldIdForSource' can not be ^1.", type( fieldSpec ) )
+        end
+    else
+        app:error( "'formattedMetadataFieldIdForSource' can not be nil." )
+    end
+end
+
+
+
+--[[
+        Called at the end of run, to cleanup/wrapup...
+        
+        At a minimum, close exiftool session.
+--]]
+_t.finale = function( params )
+    app:logv( "the end..." )
+end
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to return new name for photo, if desired.
+        
+        Parameters:
+        
+            call - elare call object (not normally used).
+            photo - LrPhoto object.
+            photoPath - source photo path.
+            folderPath - parent path of source photo file.
+            base - photo filename without extension
+            ext - photo filename extension.
+            
+        Note: This function, like all others in this file, executes in the elare plugin framework environment,
+        thus all elare global objects are available, and most Lr namespaces have been imported, and all SDK functions are callable, including:
+        
+        photo:getRawMetadata( key )
+        photo:getFormattedMetadata( key )
+        
+        Returns:
+        
+            new filename base, or
+            nil, and an error message.
+--]]
+_t.renameBase = function( params )
+    local photo = params.photo or error( "no photo" )
+    app:assert( fieldGetter and fieldId, "field getter or field id is not initialized." )
+    local text = fieldGetter( cache, photo, fieldId ) -- can be nil or blank.
+    if not str:is( text ) then
+        return " " -- return one space - a trick so that field loading works..
+    end
+    return text, true -- true => handle as field-loader, not true renamer.
+end
+
+
+
+-- Path to exiftool executable file. Theoretically you won't need to edit this, unless you install to a non-default location.
+-- Example #1 (Windows): _t.exifToolApp = "D:\\Programs\\Phil Harvey\\exiftool.exe" -- double-up on the backslashes.
+-- Example #2 (Mac): _t.exifToolApp = "/usr/bin/exiftool"
+-- Example #3: _t.exifToolApp = nil -- let plugin try to find exiftool in default location.
+_t.exifToolApp = nil
+
+
+
+-- return config table
+return _t

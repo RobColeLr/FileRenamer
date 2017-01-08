@@ -1,0 +1,336 @@
+--[[
+        Plugin configuration file (aka 'Advanced Settings'; sometimes called "preference backing file").
+        
+        Note: Named members of return table are accessible in source code as:
+        
+            app:getPref( name )
+            
+            provided there is no app:initPref( name, val ) or app:setPref( name, val ) statements executed prior,
+            which hide/override the named members in this file.
+            
+            for example, in this file, if you write:
+                
+                _t.foo = "bar" -- test pref.
+                
+            then the value of
+                
+                app:getPref( 'foo' ) -- get the value for the preference named "foo", from wherever it is defined.
+                
+            in various places in the code, will be
+            
+                "bar"
+                
+            (the idea being that the programmer can move preferences from the backing file to the UI without changing the code that uses it - iow: just add the UI for it).
+            
+        *** Important: when editing, take care to assure punctuation and syntax are not disturbed. In comments, it doesn't matter, but in the rest - every character is meaningful,
+                       including spaces, commas, brackets, dots, underscores...
+                       
+        There are 2 kinds of comments:
+        1. single line
+        2. multi-line (like this one).
+        
+        lines beginning with '--' (without the apostrophes) are single line comments.
+        lines beginning with '- - [ [' (without the spaces) begin multi-line comments, which end with '- - ] ]' (without the spaces).
+
+        
+        Speaking of quotes and apostrophe's: they're equivalent - they both delimit text strings (but you can nest double-quotes within apostrophe-delimited strings and vice versa,
+        without escaping, examples:
+        local mystring = 'This is a "string"' -- ok
+        local mystring = "This is a 'string'" -- ok
+        local mystring = 'This is a 'string'' -- not ok
+        local mystring = "This is a "string"" -- not ok
+        local mystring = 'This is a \'string\'' -- ok (apostrophes have been "escaped" via backslash character)
+        local mystring = "This is a \"string\"" -- ok (double-quotes are escaped)
+
+        
+        Definitions:
+        
+        * Comment-out: to prepend '--' to a non-comment line making it a comment, or to wrap one or more non-comment lines with '- - [ [' & '- - ] ]'. This turns non-comment lines into comments, rendering them null & void for all practical purposes.
+        * Un-comment: to remove the '--' at the front of a comment line thus enabling it to take effect (or removing '- - [ [' & '- - ] ]' wrappage).
+        
+        
+        This configuration file is interpreted in the context of the Elare Plugin Framework - most Lr namespaces are available, and all standard Elare interface objects are available, including:
+        
+        String/text formatting:
+        * str:fmtx - a derivative of Lightroom's LOC function - same syntax for specifying placeholders in the format string..., e.g.
+            str:fmtx( "Hello ^1^2", "World", "!!!" ) -- will create the string: "Hello World!!!".
+          string.format 'C' string formatting function, e.g.
+            string.format( "%u times", count ) -- outputs "5 times", if count is 5.
+        Debugging (ignored if advanced debugging is not enabled) :
+        * Debug.lognpp - log any number of parameters in a "pretty" format, e.g.
+            Debug.lognpp( "before", devSets, "after", photo:getDevelopSettings() ) -- log before and after develop settings.
+        * Debug.pause and Debug.pauseIf - shows values of variables, if any, and presents options to keep going or stop, e.g.
+            Debug.pause( myvar ) -- stop execution temporarily, and show the value of myvar variable.
+            Debug.pause() -- show nothing, but confirm execution has reached this point.
+        Logging to plugin log file:
+        * app:log and app:logv log file methods, e.g.
+            app:log( "Here it is: ^1", it ) -- log it
+            app:logv( "hmm..." ) -- log hmm... - included in log file only if verbose logging is enabled.
+            
+        and MANY more, but the luadoc is out of date - see source code itself, or examples here-in, for reference.
+          
+        Reference documentation can be obtained by reading the API doc, downloadable as part of the Lightroom SDK, from here:
+        
+        http://www.adobe.com/devnet/photoshoplightroom.html
+        
+        Get lua language documentation from www.lua.org
+--]]
+
+
+-- declare return table
+local _t = {}
+
+
+
+--[[
+        *** Instructions:
+        
+        ========================
+        For advanced users only:
+        ========================
+        
+        Choose a different formatted metadata field, if you want.
+        The chosen field must be one supported by file renaming template in Lightroom.
+        Note: The field data is moved to a temp location, then back after renaming,
+        so it doesn't really matter which field is used, but there is always some risk
+        of a bug or some other mishap, so an unused field would be slightly less risk.
+        
+        PS - Smart people will back up their catalog before doing the rename.
+        
+        *** IMPORTANT: Whatever field is chosen here, the filename template used for renaming in Lightroom must use
+        the same field!!! And, if it's not the headline field, then you'd better create your own template for renaming,
+        since the one included with this plugin only works with the headline field.
+--]]
+_t.formattedMetadataFieldIdForRenaming = 'headline'
+
+
+
+--[[
+        *** Instructions:
+        
+        Declare persistent local variables here, if desired.
+--]]
+local noneDotDot -- ...
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to get requisite view items to acquire inputs for your renamer from user, if desired.
+        
+        params:
+            call - elare call object (normally not needed).
+            props - ui property table (needed for inputs to be used in rename dialog box).
+--]]
+_t.viewItems = nil
+--[=[
+function( params )
+    app:initPref( 'luaRegex', false ) -- ignore dialog box properties, and use persistent preferences instead.
+    local vi = {} -- bind-to-object must be within vf item.
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Search for",
+            width = share 'my_label_width',
+        },
+        vf:edit_field {
+            bind_to_object = prefs,
+            value = app:getPrefBinding( 'searchFor' ),
+        },
+        vf:static_text {
+            title = "If \"search for\" term is present in source file name, it will be replaced.",
+        },
+    }
+    vi[#vi + 1] = vf:spacer{ height=5 }
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Replace with",
+            width = share 'my_label_width',
+        },
+        vf:edit_field {
+            bind_to_object = prefs,
+            value = app:getPrefBinding( 'replaceWith' ),
+        },
+        vf:static_text {
+            title = "If search term is found in source file name, it will be replaced with this.",
+        },
+    }
+    vi[#vi + 1] = vf:spacer{ height=5 }
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Lua Regex",
+            width = share 'my_label_width',
+        },
+        vf:checkbox {
+            bind_to_object = prefs,
+            value = app:getPrefBinding( 'luaRegex' ),
+            title = str:fmtx( "If checked, search && replace terms are interpreted as lua regular expression patterns." ), -- windows likes double ampersands, mac: not so much.
+            tooltip = "Leave unchecked if you are uncertain, in which case search & replace terms are interpreted as plain text.", -- windows prefers single ampersand for tooltips - go figure.
+        },
+    }
+    return vi
+end
+--]=]
+
+
+
+-- Set this to true to have an exiftool session opened which you can use for renaming.
+local useExifToolSession = false
+-- This variable will contain the opened exiftool session for you to use:
+local exifToolSession
+
+
+
+--[[
+        Called once per run, so can be used to initialize persistent local variables.
+        
+        params:
+        
+            call
+            props
+            
+        returns:
+        
+            nil or error message
+--]]
+_t.init = function( params )
+    local call = params.call
+    app:log()
+    if useExifToolSession then
+        exifToolSession = exifTool:openSession( call.name ) -- does it, and logs it, or throws error.
+    else
+        app:log( "No exiftool session initialized." )
+    end
+    app:log()
+    local s, m = cat:initOriginalFilenames()
+    if s then
+        app:log( "Original filenames have been successfully initialized for renaming purposes.." )
+    else
+        return str:fmtx( "Unable to initialize original filenames for renaming purposes - ^1", m )
+    end
+    -- return nil => ok.
+end
+
+
+
+--[[
+        Called at the end of run, to cleanup/wrapup...
+        
+        At a minimum, close exiftool session.
+--]]
+_t.finale = function( params )
+    local call = params.call
+    if exifToolSession then -- check is redundent, but comforting to me.
+        exifTool:closeSession( exifToolSession ) -- does it, and logs it...
+    end
+end
+
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to return new name for photo, if desired.
+        
+        Parameters:
+        
+            call - elare call object (not normally used).
+            photo - LrPhoto object.
+            photoPath - source photo path.
+            folderPath - parent path of source photo file.
+            base - photo filename without extension
+            ext - photo filename extension.
+            
+        Note: This function, like all others in this file, executes in the elare plugin framework environment,
+        thus all elare global objects are available, and most Lr namespaces have been imported, and all SDK functions are callable, including:
+        
+        photo:getRawMetadata( key )
+        photo:getFormattedMetadata( key )
+        
+        Returns:
+        
+            new filename base, or
+            nil, and an error message.
+--]]
+_t.renameBase = function( params )
+    local photo = params.photo or app:callingError( "no photo in params" )
+    app:assert( cat:isOriginalFilenamesInit(), "Original filenames must be pre-initialized." )
+
+    -- validate assumptions and pre-requisites.
+    if str:is( noneDotDot ) then
+        return nil, "Did not expect none.."
+    end
+    assert( params.base ~= nil, "no base param" )
+    assert( params.photoPath ~= nil, "no photoPath in params" )
+    
+    local exif
+    local dateTimeOriginalNumStruct
+    if exifToolSession then
+        -- get date-time original from exif, instead of Lr catalog:
+        exifToolSession:addArg( "-S" )
+        exifToolSession:addTarget( params.photoPath )
+        local rslt, errm = exifToolSession:execute()
+        if str:is( rslt ) then
+            --Debug.lognpp( rslt ) -- Uncomment this line, and enable advanced debug in plugin manager to dump entire block of exif metadata.
+            exif = exifTool:parseShorty( rslt ) -- parse -S result.
+            Debug.pause( exif ) -- Enable advanced debug in plugin manager to pause & display a little of the exif metadata.
+        else
+            return nil, errm
+        end
+        if exif['DateTimeOriginal'] then
+            dateTimeOriginalNumStruct = exifTool:parseDateTime( exif['DateTimeOriginal'] ) -- returns comps as nums or strs??
+            Debug.pause( dateTimeOriginalNumStruct )
+            app:assert( type( dateTimeOriginalNumStruct.second ) ~= 'nil', "bad timestamp - seconds field is missing" )
+        else
+            Debug.pause( "no 'DateTimeOriginal' in exif" )
+        end
+    else -- get date-time original from Lr catalog..
+        local dto = photo:getRawMetadata( 'dateTimeOriginal' ) or error( "no dto mdat" ) -- error never happens..
+        local array = { LrDate.timestampToComponents( dto ) } -- get as array
+        -- Debug.pause( array )
+        -- format to match what would have been parsed from exif:
+        dateTimeOriginalNumStruct = {}
+        dateTimeOriginalNumStruct.year = array[1]
+        dateTimeOriginalNumStruct.month = array[2]
+        dateTimeOriginalNumStruct.day = array[3]
+        dateTimeOriginalNumStruct.hour = array[4]
+        dateTimeOriginalNumStruct.minute = array[5]
+        dateTimeOriginalNumStruct.second = array[6]
+        -- dateTimeOriginalNumStruct.dayOfWeek = array[7] - not sure about this one..
+        -- Debug.pause( dateTimeOriginalNumStruct )
+        app:assert( type( dateTimeOriginalNumStruct.second ) == 'number', "bad timestamp - seconds type is: '^1' - expected 'number'", type( dateTimeOriginalNumStruct.second )  )
+    end
+    
+    app:assert( tab:is( dateTimeOriginalNumStruct ), "dto struct is not a proper table" )
+    
+    -- format date & time as preferred:
+    local dateStr = string.format( "%04u%02u%02u", dateTimeOriginalNumStruct.year, dateTimeOriginalNumStruct.month, dateTimeOriginalNumStruct.day )
+    local timeStr = string.format( "%02u%02u%02u", dateTimeOriginalNumStruct.hour, dateTimeOriginalNumStruct.minute, dateTimeOriginalNumStruct.second )
+    
+    -- compute new filename base.
+    local origFn, errm = cat:getOriginalFilename( photo ) -- includes extension
+    if origFn then
+        local origBase = LrPathUtils.removeExtension( origFn )
+        local newBase = str:fmtx( "^1-^2_^3", dateStr, timeStr, origBase )
+        Debug.pause( newBase )
+        return newBase
+    else
+        return nil, errm
+    end
+
+    error( "how here?" )
+end
+
+
+
+-- Path to exiftool executable file. Theoretically you won't need to edit this, unless you install to a non-default location.
+-- Example #1 (Windows): _t.exifToolApp = "D:\\Programs\\Phil Harvey\\exiftool.exe" -- double-up on the backslashes.
+-- Example #2 (Mac): _t.exifToolApp = "/usr/bin/exiftool"
+-- Example #3: _t.exifToolApp = nil -- let plugin try to find exiftool in default location.
+_t.exifToolApp = nil
+
+
+
+-- return config table
+return _t

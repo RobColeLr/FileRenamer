@@ -1,0 +1,20 @@
+s = {
+	deflated = {
+		{
+			"",
+			{
+				value = "com.adobe.headline",
+			},
+			"",
+			name = "rc File Renamer",
+			presetType = "Naming",
+		},
+		"AgTokenPresets",
+		"restoreTokenFromArchivedState",
+	},
+	id = "F5481788-AE67-4F84-9462-7995EF73D4A1",
+	internalName = "rc File Renamer",
+	title = "rc File Renamer",
+	type = "Naming_Tokens",
+	version = 0,
+}

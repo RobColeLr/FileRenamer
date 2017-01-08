@@ -1,0 +1,600 @@
+--[[
+        Plugin configuration file (aka 'Advanced Settings'; sometimes called "preference backing file").
+        
+        Note: Named members of return table are accessible in source code as:
+        
+            app:getPref( name )
+            
+            provided there is no app:initPref( name, val ) or app:setPref( name, val ) statements executed prior,
+            which hide/override the named members in this file.
+            
+            for example, in this file, if you write:
+                
+                _t.foo = "bar" -- test pref.
+                
+            then the value of
+                
+                app:getPref( 'foo' ) -- get the value for the preference named "foo", from wherever it is defined.
+                
+            in various places in the code, will be
+            
+                "bar"
+                
+            (the idea being that the programmer can move preferences from the backing file to the UI without changing the code that uses it - iow: just add the UI for it).
+            
+        *** Important: when editing, take care to assure punctuation and syntax are not disturbed. In comments, it doesn't matter, but in the rest - every character is meaningful,
+                       including spaces, commas, brackets, dots, underscores...
+                       
+        There are 2 kinds of comments:
+        1. single line
+        2. multi-line (like this one).
+        
+        lines beginning with '--' (without the apostrophes) are single line comments.
+        lines beginning with '- - [ [' (without the spaces) begin multi-line comments, which end with '- - ] ]' (without the spaces).
+
+        
+        Speaking of quotes and apostrophe's: they're equivalent - they both delimit text strings (but you can nest double-quotes within apostrophe-delimited strings and vice versa,
+        without escaping, examples:
+        local mystring = 'This is a "string"' -- ok
+        local mystring = "This is a 'string'" -- ok
+        local mystring = 'This is a 'string'' -- not ok
+        local mystring = "This is a "string"" -- not ok
+        local mystring = 'This is a \'string\'' -- ok (apostrophes have been "escaped" via backslash character)
+        local mystring = "This is a \"string\"" -- ok (double-quotes are escaped)
+
+        
+        Definitions:
+        
+        * Comment-out: to prepend '--' to a non-comment line making it a comment, or to wrap one or more non-comment lines with '- - [ [' & '- - ] ]'. This turns non-comment lines into comments, rendering them null & void for all practical purposes.
+        * Un-comment: to remove the '--' at the front of a comment line thus enabling it to take effect (or removing '- - [ [' & '- - ] ]' wrappage).
+        
+        
+        This configuration file is interpreted in the context of the Elare Plugin Framework - most Lr namespaces are available, and all standard Elare interface objects are available, including:
+        
+        String/text formatting:
+        * str:fmtx - a derivative of Lightroom's LOC function - same syntax for specifying placeholders in the format string..., e.g.
+            str:fmtx( "Hello ^1^2", "World", "!!!" ) -- will create the string: "Hello World!!!".
+          string.format 'C' string formatting function, e.g.
+            string.format( "%u times", count ) -- outputs "5 times", if count is 5.
+        Debugging (ignored if advanced debugging is not enabled) :
+        * Debug.lognpp - log any number of parameters in a "pretty" format, e.g.
+            Debug.lognpp( "before", devSets, "after", photo:getDevelopSettings() ) -- log before and after develop settings.
+        * Debug.pause and Debug.pauseIf - shows values of variables, if any, and presents options to keep going or stop, e.g.
+            Debug.pause( myvar ) -- stop execution temporarily, and show the value of myvar variable.
+            Debug.pause() -- show nothing, but confirm execution has reached this point.
+        Logging to plugin log file:
+        * app:log and app:logv log file methods, e.g.
+            app:log( "Here it is: ^1", it ) -- log it
+            app:logv( "hmm..." ) -- log hmm... - included in log file only if verbose logging is enabled.
+            
+        and MANY more, but the luadoc is out of date - see source code itself, or examples here-in, for reference.
+          
+        Reference documentation can be obtained by reading the API doc, downloadable as part of the Lightroom SDK, from here:
+        
+        http://www.adobe.com/devnet/photoshoplightroom.html
+        
+        Get lua language documentation from www.lua.org
+--]]
+
+
+-- declare return table
+local _t = {}
+
+
+
+--[[
+        *** Instructions:
+        
+        ========================
+        For advanced users only:
+        ========================
+        
+        Choose a different formatted metadata field, if you want.
+        The chosen field must be one supported by file renaming template in Lightroom.
+        Note: The field data is moved to a temp location, then back after renaming,
+        so it doesn't really matter which field is used, but there is always some risk
+        of a bug or some other mishap, so an unused field would be slightly less risk.
+        
+        PS - Smart people will back up their catalog before doing the rename.
+        
+        *** IMPORTANT: Whatever field is chosen here, the filename template used for renaming in Lightroom must use
+        the same field!!! And, if it's not the headline field, then you'd better create your own template for renaming,
+        since the one included with this plugin only works with the headline field.
+--]]
+_t.formattedMetadataFieldIdForRenaming = 'headline'
+
+
+
+--[[
+        *** Instructions:
+        
+        Declare persistent local variables here, if desired.
+--]]
+local dummy -- dummy variable - not used.
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to get requisite view items to acquire inputs for your renamer from user, if desired.
+        
+        params:
+            call - elare call object (normally not needed).
+            props - ui property table (needed for inputs to be used in rename dialog box).
+--]]
+_t.viewItems = nil --[[ *** save for future: function( params )
+    local props = params.props    
+    assert( props ~= nil, "need props" )
+    props.luaRegex = false
+    local vi = {} -- bind-to-object must be within vf item.
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Search for",
+            width = share 'my_label_width',
+        },
+        vf:edit_field {
+            bind_to_object = props,
+            value = bind 'searchFor',
+        },
+        vf:static_text {
+            title = "If \"search for\" term is present in source file name, it will be replaced.",
+        },
+    }
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Replace with",
+            width = share 'my_label_width',
+        },
+        vf:edit_field {
+            bind_to_object = props,
+            value = bind 'replaceWith',
+        },
+        vf:static_text {
+            title = "If search term is found in source file name, it will be replaced with this.",
+        },
+    }
+    vi[#vi + 1] = vf:row {
+        vf:static_text {
+            title = "Lua Regex",
+            width = share 'my_label_width',
+        },
+        vf:checkbox {
+            bind_to_object = props,
+            value = bind 'luaRegex',
+            title = str:fmtx( "If checked, search && replace terms are interpreted as lua regular expression patterns." ), -- windows likes double ampersands, mac: not so much.
+            tooltip = "Leave unchecked if you are uncertain, in which case search & replace terms are interpreted as plain text.", -- windows prefers single ampersand for tooltips - go figure.
+        },
+    }
+    return vi
+end
+--]]
+
+
+
+-- Set this to true to have an exiftool session opened which you can use for renaming.
+local useExifToolSession = true
+-- This variable will contain the opened exiftool session for you to use:
+local exifToolSession
+local lastTime -- original, implied.
+local subSec -- used by sequence number emulation function.
+
+
+--[[
+        Called once per run, so can be used to initialize persistent local variables.
+        
+        params:
+        
+            call
+            props
+            
+        returns:
+        
+            nil or error message
+--]]
+_t.init = function( params )
+    local props = params.props
+    local call = params.call
+    if useExifToolSession then
+        exifToolSession = exifTool:openSession( call.name ) -- does it, and logs it, or throws error.
+    end
+end
+
+
+
+--[[
+        Called at the end of run, to cleanup/wrapup...
+        
+        At a minimum, close exiftool session.
+--]]
+_t.finale = function( params )
+    local call = params.call
+    if exifToolSession then -- check is redundent, but comforting to me.
+        exifTool:closeSession( exifToolSession ) -- does it, and logs it...
+    end
+end
+
+
+
+-- *** You need to modify this table (by cutting/copying and pasting lines, then editing) if you want to use photog ID derived from comment.
+-- Note: "RC" stands for "Rob Cole".
+-- line entry format: ['{comment-from-exif}'] = "{photog-id}",
+-- for example: ['RDC'] = "RC", -- me.
+-- To be clear: {photo-id} can be anything you want, but {comment-from-exif} must match exif metadata verbatim (case sensitive).
+local photogIdTable = {
+    ['RDC'] = "RC",
+}
+
+
+-- *** You need to modify this table (by cutting/copying and pasting lines, then editing) if you want to use camera ID derived from camera model.
+-- Note: "NA" stands for "my first Nikon", and "NB" is for "my second Nikon"...
+-- line entry format: ['{camera-model-from-exif}'] = "{camera-id}",
+-- for example: ['FinePix E550'] = "FA", -- my first Fuji.
+-- To be clear: {camera-id} can be anything you want, but {camera-model-from-exif} must match exif metadata verbatim (case sensitive).
+local cameraIdTable = {
+    ['E950'] = "NA",
+    ['NIKON D300'] = "NB",
+}
+
+
+
+-- function to compute photographer's initialis, or return default if none..
+-- feel free to edit to taste, just remember:
+-- this only called if usePhotogId is true.
+-- return id -- if proper id..
+-- return default -- to use default
+-- return nil -- will kill the rename.
+local function getPhotogId( exif, default )
+    local comment = exif['UserComment']
+    --Debug.pause( comment )
+    if str:is( comment ) then
+        local id = photogIdTable[comment]
+        if id then
+            app:logV( "Got photographer ID (^1) for comment: '^2' from exif.", id, comment )
+            return id
+        elseif default then
+            app:logV( "No photographer ID for comment '^1' - returning default: '^2'", comment, default ) 
+            return default
+        else
+            Debug.pause( "No ID for comment - to remedy: add to 'photogIdTable' or set 'usePhotogId' to false." ) 
+            app:logW( "No ID for comment - to remedy: add '^1' to 'photogIdTable' or set 'usePhotogId' to false.", comment ) 
+            return nil
+        end
+    elseif default then
+        app:logV( "No photographer comment - returning default ID: '^1'", default ) 
+        return default
+    else
+        Debug.pause( "No photographer comment - to remedy: set 'usePhotogId' to false." ) 
+        app:logW( "No photographer comment - to remedy: set 'usePhotogId' to false." ) 
+        return nil
+    end
+end
+
+
+
+-- function to get camera ID based on camera model, or default if none..
+-- feel free to edit to taste, just remember:
+-- this only called if useCameraId is true.
+-- return id -- if proper id..
+-- return default -- to use default
+-- return nil -- will kill the rename.
+local function getCameraId( cameraModel, default )
+    if str:is( cameraModel ) then
+        local id = cameraIdTable[cameraModel]
+        if id then
+            app:logV( "Got camera ID (^1) for model: '^2' from exif.", id, cameraModel )
+            return id
+        elseif default then
+            app:logV( "No camera ID for model '^1' - returning default: '^2'", cameraModel, default ) 
+            return default
+        else
+            Debug.pause( "No ID for model - to remedy: add to 'cameraIdTable' or set 'useCameraId' to false." ) 
+            app:logW( "No ID for model - to remedy: add '^1' to 'cameraIdTable' or set 'useCameraId' to false.", cameraModel ) 
+            return nil
+        end
+    elseif default then
+        app:logV( "No camera model - returning default ID: '^1'", default ) 
+        return default
+    else
+        Debug.pause( "No camera model - to remedy: set 'useCameraId' to false." ) 
+        app:logW( "No camera model - to remedy: set 'useCameraId' to false." ) 
+        return nil
+    end
+end
+
+
+
+-- function to emulate subsecond time when not present in exif.
+-- returns 0 if new second, else incremented sequence number.
+-- assures unique filenames based on date-time alone (if only one camera that date)
+-- need camera ID if more than one camera used that date (for uniqueness I mean).
+local function subSecEmu( t )
+    local thisTime = LrDate.timeFromComponents( t.year, t.month, t.day, t.hour, t.minute, t.second )
+    if lastTime == nil then
+        subSec = 0
+    --elseif num:isWithin( lastTime, thisTime, 300 ) then -- ### for testing.
+    elseif lastTime == thisTime then -- same second
+        subSec = subSec + 1
+    else -- different second
+        subSec = 0
+    end
+    lastTime = thisTime
+    return subSec
+end
+
+
+
+--[[
+        *** Instructions:
+        
+        Modify to return new name for photo, if desired.
+        
+        Parameters:
+        
+            call - elare call object (not normally used).
+            photo - LrPhoto object.
+            photoPath - source photo path.
+            folderPath - parent path of source photo file.
+            base - photo filename without extension
+            ext - photo filename extension.
+            
+        Note: This function, like all others in this file, executes in the elare plugin framework environment,
+        thus all elare global objects are available, and most Lr namespaces have been imported, and all SDK functions are callable, including:
+        
+        photo:getRawMetadata( key )
+        photo:getFormattedMetadata( key )
+        
+        Returns:
+        
+            new filename base, or
+            nil, and an error message.
+--]]
+_t.renameBase = function( params )
+
+    local newBase -- variable in which to place new file (base) name - exclude extension.
+
+    -- validate assumptions and pre-requisites.
+    assert( params.base ~= nil, "no base param" )
+    assert( params.photoPath ~= nil, "no photoPath in params" )
+    
+    local exif -- -S format table of exif info, courtesy of exiftool.
+    
+    -- these will be populated by default or if specified below (see 'use...' vars), but you can add others if you want..
+    local photogId                      -- photographer ID.
+    local cameraId                      -- camera ID.
+    local dateTimeOriginalNumStruct     -- individual (string) members for each "timestamp" component, e.g. year, mo..
+    local subSecTimeOriginal            -- if available in exif
+    local folderNumber                  -- if available in exif
+    local imageNumber                   -- if available in exif
+    local fnImageNumber                 -- if available from filename
+    local imgNum                        -- consolidated image number to use.
+
+    -- note: date original is required for exif renaming, all others are optional, although image number is highly recommended to improve odds for uniqueness.
+    local useTimeOriginal = true        -- if true, use time as well as date. set false to use date only. (default is true)
+    local useSubSecTimeOriginal = false -- if true, include subsec time element (e.g. hundredths of second) of date-time original. (default is false)
+    local subSecTimeOriginalDefault = subSecEmu -- if unavailable, use subsec emulation function.
+    local usePhotogId = true            -- if true, use photographer's initials if computed. set false to omit regardless. (default is true)
+    local photogIdDefault = ""          -- use this value if photographer's initials are not available. (default is "", which means rename without if unavailable - don't kill the export).
+    local useCameraId = true            -- if true, use camera ID if available. set false to omit camera-id (although default value is true, it will be "empty" if not available - see below..).
+    local cameraIdDefault = ""          -- use this value if camera ID unavailable (default is "", which means omit cameraId but don't kill the rename).
+    local useFolderNumber = false       -- if true, use folder number if available. set false to omit folder number. (default is false)
+    local folderNumberDefault = 0       -- use this value if folder number is unavailable (default is 0).
+    local useImageNum = true            -- if true, use image number if available. set false to omit image number. (default is true).
+    local imageNumDefault = nil         -- use this value if image-num unavailable (default is nil, which means kill the rename if unavailable).
+    local imageNumEither = true         -- use either image num if available
+    local imageNumExifOverFn = true     -- set true to take image number from exif over filename, set false or nil to take fn over exif - if both available (default is true).
+
+    -- controls filename image number parsing:
+    local minLen = 2 -- set this to minimum number of characters a proper image number will have - set to 0 for no minimum.
+    local maxLen = 7 -- set this to minimum number of characters a proper image number will have - set to 99999 or math.huge for no maximum.
+    local atFront = false -- If false (the default) expect at tail end. set this to 'true (without the apostrophes) to start looking for filename number at the front of the filename instead.
+    
+    if exifToolSession then
+        exifToolSession:addArg( "-S" )
+        exifToolSession:addTarget( params.photoPath )
+        local rslt, errm = exifToolSession:execute()
+        if str:is( rslt ) then
+            exif = exifTool:parseShorty( rslt ) -- parse -S result.
+            -- Debug.lognpp( exif ) -- Uncomment this line, and enable advanced debug in plugin manager to dump entire block of exif metadata.
+        else
+            return nil, errm
+        end
+        -- dto (cap time) required
+        dateTimeOriginalNumStruct = exifTool:parseDateTime( exif['DateTimeOriginal'] )
+        if dateTimeOriginalNumStruct then
+            -- ok
+        else
+            return nil, "no 'DateTimeOriginal' in exif - can't rename using this preset.."
+        end
+        local msg
+        if useSubSecTimeOriginal then
+            subSecTimeOriginal = exif['SubSecTimeOriginal']
+            if subSecTimeOriginal then
+                app:logV( "Got sub-sec time (original) from exif: ^1", subSecTimeOriginal )
+            elseif subSecTimeOriginalDefault then
+                if type( subSecTimeOriginalDefault ) == 'function' then
+                    subSecTimeOriginal = subSecTimeOriginalDefault( dateTimeOriginalNumStruct )
+                    app:log( "Got sub-sec time (original) from default function: '^1'", subSecTimeOriginal )
+                else
+                    subSecTimeOriginal = subSecTimeOriginalDefault
+                    app:log( "Got sub-sec time (original) from default value: '^1'", subSecTimeOriginal )
+                end
+            else
+                return nil, "No sub-sec time (original) - not renaming."
+            end
+        end            
+        if usePhotogId then
+            photogId = getPhotogId( exif, photogIdDefault )
+            if photogId then
+                if photogId ~= photogIdDefault then
+                    --app:logV( "Got photographer ID based on exif: ^1", photogId ) - logged in method
+                elseif str:is( photogIdDefault ) then
+                    app:log( "Got photographer ID based on default: '^1'", photogId )
+                else
+                    app:log( "No photographer ID - will be omitted from filename." )
+                end
+            else
+                return nil, "No photographer ID"
+            end
+        end
+        if useCameraId then
+            cameraId = getCameraId( exif['Model'], cameraIdDefault )
+            if cameraId then
+                if cameraId ~= cameraIdDefault then
+                    --app:logV( "Got camera ID based on exif: ^1", cameraId ) - logged in method
+                elseif str:is( cameraIdDefault ) then
+                    app:log( "Got camera ID based on default: '^1'", cameraId )
+                else
+                    app:log( "No camera ID - will be omitted from filename." )
+                end
+            else
+                return nil, "No camera ID"
+            end
+        end
+        if useFolderNumber then
+            folderNumber, msg = exifTool:getFolderNumber( exif ) -- numeric, msg.
+            if folderNumber then
+                app:logV( "Got folder number from exif: ^1", folderNumber )
+                --Debug.pause( folderNumber )
+            elseif folderNumberDefault then
+                folderNumber = folderNumberDefault
+            else
+                app:logW( "Unable to get folder number from exif and no default specified (file will not be renamed) - ^1.", msg )
+                return nil, msg
+            end
+        end
+        if useImageNum then
+            imageNumber, msg = exifTool:getImageNumber( exif ) -- numeric
+            if imageNumber then
+                 app:logV( "Got image number from exif: ^1", imageNumber )
+                --Debug.pause( imageNumber )
+            else
+                app:logW( "Unable to get image number from exif - ^1.", msg )
+            end
+            fnImageNumber = str:getImageNumStr( params.base, minLen, maxLen, atFront ) -- number as string, no msg.
+            if fnImageNumber then
+                if imageNumber then
+                    if tonumber( fnImageNumber ) == imageNumber then
+                        app:logV( "Got image number from filename - same as from exif: ^1", fnImageNumber )
+                    else
+                        app:log( "*** Got image number from filename (^1), but it differs from that in exif: ^2", fnImageNumber, imageNumber )
+                    end
+                else
+                    app:logV( "Got image number from filename (^1), but nothing from exif for comparison.", fnImageNumber )
+                end
+            else
+                app:logV( "Unable to get image number from filename." )
+            end
+            -- pick one of the image numbers
+            if imageNumExifOverFn and imageNumber then
+                imgNum = imageNumber
+            elseif fnImageNumber then
+                imgNum = fnImageNumber
+            elseif imageNumDefault then
+                imgNum = imageNumDefault
+                app:log( "No image number obtained from exif/file - using default instead: ^1", imgNum )
+            else -- no img num, no default..
+                return nil, "no satisfactory image number to use"
+            end
+        end
+    else
+        return nil, "Exif Rename requires exif-tool session"
+    end
+    
+    -- components
+    local date = string.format( "%04u-%02u-%02u", dateTimeOriginalNumStruct.year, dateTimeOriginalNumStruct.month, dateTimeOriginalNumStruct.day )        -- e.g. 2014-05-17
+    -- local date = string.format( "%04u%02u%02u", dateTimeOriginalNumStruct.year, dateTimeOriginalNumStruct.month, dateTimeOriginalNumStruct.day )        -- e.g. 20140517
+    local time
+    if useTimeOriginal then
+        time = string.format( "%02u-%02u-%02u", dateTimeOriginalNumStruct.hour, dateTimeOriginalNumStruct.minute, dateTimeOriginalNumStruct.second )      -- e.g. 12-00-01
+        -- time = string.format( "%02u%02u%02u", dateTimeOriginalNumStruct.hour, dateTimeOriginalNumStruct.minute, dateTimeOriginalNumStruct.second )      -- e.g. 120001
+        if subSecTimeOriginal then
+            time = time.."."..string.format( "%02u", subSecTimeOriginal )
+        end
+    else
+        time = ""
+    end
+    local photog
+    if str:is( photogId ) then
+        photog = photogId
+    else
+        photog = ""
+    end
+    local camera
+    if str:is( cameraId ) then
+        camera = cameraId
+    else
+        camera = ""
+    end
+    local folder    
+    if folderNumber then
+        folder = string.format( "%03u", folderNumber )           -- e.g. 103
+    else
+        folder = ""
+    end
+    local image
+    if imgNum then
+        image = string.format( "%04u", imgNum )          -- e.g. 1234
+    else
+        image = ""
+    end
+    
+    local newBase    
+    -- compute new filename base:
+    if useTimeOriginal then
+        newBase = str:fmtx( "^1_^2_^3^4^5", date, time, camera, folder, image ) -- feel free to re-arrange items, and change or remove delimiters..
+        -- newBase = str:fmtx( "^1_^2_^3^4^5", date, camera, time, folder, image ) -- alternative which puts camera ID before time
+        -- newBase = str:fmtx( "^1^2^3^4^5", date, photog, time, camera, image ) -- with no delimiters anywhere (even in components): this is what Rob uses (@2014).
+        --[[
+                Example filenames:
+                -------------------
+                2012-11-23_06-05-22_103-4295.NEF    (with folder-num, with image-num - unique, as long as only one camera that day)
+                2012-11-23_06-05-22_4295.NEF        (without folder-num, with image-num - unique, as long as only one camera that day)
+                2012-11-23_06-05-22_103.NEF         (with folder-num, without image-num - not unique and not recommended, unless only camera that day has no burst mode)
+                2012-11-23_06-05-22.NEF             (without folder-num, without image-num - not unique and not recommended, ditto)
+                
+                Note: I often toss in a camera ID which ensures uniqueness, and makes image number more meaningful, e.g. for my 2nd Nikon: 'NB' (Nikon "B").
+                2012-11-23_06-05-22_NB4295.NEF      (guaranteed to be unique if camera ID assigned based on exif metadata)
+                2012-11-23_06-05-22.01.NEF          Alternative without camera ID, and subsec instead of folder/image num(s).
+                                                    Note: this is a nice format if your shoot took just one camera, since alphabetic ordering is same as capture time,
+                                                    yet format is compact and filenames unique (1 camera) - intra-catalog as well as inter-catalog.
+                2012-11-23_NB_06-05-22.01.NEF       Alternative with different comera placement and subsec instead of folder/image num(s).
+                                                    Note: this is a nice format if your shoot took two cameras, since alphabetic ordering keeps photos separated by camera,
+                                                    yet format is still (relatively) compact and filenames unique (regardless of camera count) - intra-catalog as well as inter-catalog.
+                20121123RC060522NB4295.NEF          Rob Cole's filenaming convention (@2014).
+                                                    * Plusses: alphabetic order is what I want, even if entire library in a single folder, even when multi-photographer shoots, even if multi-cameras were hardware synchronized..., and packed full of info + unique, yet as compact as possible.
+                                                    * Minuses: not very readable, requires editing preset prior to use if photos are from photographer(s) which don't follow my convention (most..), and still not that compact.
+        --]]                
+    else
+        newBase = str:fmtx( "^1_^2^3^4", date, camera, folder, image ) -- feel free to re-arrange..
+        --[[
+                Example filenames:
+                -------------------
+                2012-11-23_103-4295.NEF    (with folder-num, with image-num - usually unique, although not guaranteed - consider camera ID)
+                2012-11-23_4295.NEF        (without folder-num, with image-num - not unique, due to image-number rollover - not recommended without camera ID).
+                2012-11-23_103.NEF         (with folder-num, without image-num - not unique and not recommended)
+                2012-11-23.NEF             (without folder-num, without image-num - not unique and not recommended)
+                
+                Note: I often toss in a camera ID which ensures uniqueness, and makes image number more meaningful, e.g. for my 2nd Nikon: 'NB' (Nikon "B").
+                2012-11-23_NB4295.NEF      (guaranteed to be unique if camera ID assigned based on exif metadata)
+        --]]            
+    end
+        
+    --Debug.pause( newBase )
+
+    -- return to caller - note: filename will be checked for illegal characters upon return.
+    return newBase
+end
+
+
+
+-- Path to exiftool executable file. Theoretically you won't need to edit this, unless you install to a non-default location.
+-- Example #1 (Windows): _t.exifToolApp = "D:\\Programs\\Phil Harvey\\exiftool.exe" -- double-up on the backslashes.
+-- Example #2 (Mac): _t.exifToolApp = "/usr/bin/exiftool"
+-- Example #3: _t.exifToolApp = nil -- let plugin try to find exiftool in default location.
+_t.exifToolApp = nil
+
+
+
+-- return config table
+return _t
