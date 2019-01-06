@@ -94,11 +94,15 @@ function Ftp:connect()
     if self.ftpSettings and self.ftpSettings.path then -- unmapped ###1
         self.ftpSettings.path = Ftp.formatPath( self.ftpSettings.path )
     end
-    self.ftpConn = LrFtp.create( self.ftpSettings, self.autoNegotiate )
+    --Debug.lognpp( self.ftpSettings, self.autoNetotiate )
+    self.ftpSettings.port = tonumber( self.ftpSettings.port ) or error( "bad port number" ) -- probably should assure numeric before calling, but in case..
+    self.ftpConn = LrFtp.create( self.ftpSettings, self.autoNegotiate ) -- auto-negotiate may be nil.
+    app:logV( "Created FTP connection to ^1 (but not really connected yet)", self.ftpSettings.server )
     self.rootPath = self.ftpSettings.path -- already formatted.  str:replaceBackSlashesWithForwardSlashes( self.ftpSettings.path ) -- never changes
     local s, m = self:_existsAsDir( "" ) -- make sure root-dir exists as a directory (and anyway, this forces a "real" connection).
     if s then
         if self.ftpConn.connected then
+            app:logV( "Connected and logged in as ^1", self.ftpSettings.username )
             return true
         else
             return false, "unexpectedly not connected..."

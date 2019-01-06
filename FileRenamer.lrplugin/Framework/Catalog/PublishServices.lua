@@ -30,9 +30,26 @@ end
 
 
 
+--- Get publish service given name.
+--  @usage see catalog method for getting publish service based on ID.
+--  @param name (string, required) name of publish service to get. 
+--  @param pluginId (string, optional) ID of plugin - nil means all.
+--  @return publish service or nil.
+function PublishServices:getPublishService( name, pluginId )
+    local array = catalog:getPublishServices( pluginId ) -- nil => all plugins.
+    for i, v in ipairs( array ) do
+        if v:getName() == name then
+            return v
+        end
+    end
+    -- return nil
+end
+
+
+
 --- Initialize publish service information.
 --
---  @usage the initial motivation for this function is to consolidate the variety of similar "get...info" functions which are very similar but slightly different...
+--  @usage the initial motivation for this function is to consolidate the variety "get...info" functions which are very similar but slightly different...
 --      <br>    this function may take a tad longer than *some* (not all) of them, but the hope is to recode such that it's done once upon startup, and again upon demand if necessary.
 --  @usage returns nothing - use get... methods to access info.
 --
@@ -50,6 +67,7 @@ function PublishServices:init( call, targetId )
     self.pubCollLookup = {} -- for each published collection index, associated publish service info (un-named, but in srvInfo format).
     self.pubSrvLookup = {} -- for each publish service index, a table of service info (un-named, but in srvInfo format).
     self.pluginLookup = {} -- for each plugin id implementing publish services, a table containing pluginId, and an array of service info (in srvInfo format).
+    self.pubPhotoCount = 0
     local initPubCollSets
     local yc = 0
     local function initPubColl( pubColl, srvInfo )
@@ -61,6 +79,7 @@ function PublishServices:init( call, targetId )
             local photo = pubPhoto:getPhoto()
             -- this defines a published photo record:
             self.pubPhotoLookup[pubPhoto] = { srvInfo=srvInfo, pubColl=pubColl } -- each published photo can access info about corresponding service.
+            self.pubPhotoCount = self.pubPhotoCount + 1
             local photoEntry -- structure accessible given photo.
             if self.photoLookup[photo] == nil then
                 -- Note: this defines a photo entry:
@@ -175,6 +194,18 @@ end
 
 
 
+--- Get all published photo info.
+--  @usage typicall within a plugin, but that depends on init.
+--  @param a trick parameter: must be nil.
+--  @return pubPhotoLookup - keys are published photos, and values are srv-info.
+--  @return pubPhotoCount - total number of items in pub-photo lookup table.
+function PublishServices:getPubPhotoInfo( a )
+    app:callingAssert( a == nil, "this method returns all published photo info - no parameters.." )
+    return self.pubPhotoLookup, self.pubPhotoCount
+end
+
+
+
 --- Get plugin name from plugin-id.
 --
 --  @usage returns typical name - may not be true across the board, but is an almost universal convention - typically used for friendly display / logging..
@@ -239,7 +270,8 @@ end
 
 --- Get all published photos, across all collections, all services defined for this plugin.
 --
---  @usage *** deprecated ###2: I *think* this is only being used by TreeSync Publisher - oops:change-manager auto-publish too.
+--  @usage *** deprecated in favor of using initialized publish-service info instead. ###2: In my plugins, this is only being used by change-manager auto-publish,
+--      <br>    which doesn't use init method of publish services object.
 --
 function PublishServices:getPublishedPhotos( pluginId )
     if pluginId == nil then

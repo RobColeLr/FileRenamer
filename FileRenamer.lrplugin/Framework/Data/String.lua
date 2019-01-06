@@ -2,6 +2,31 @@
         String.lua
         
         String handling methods, including path manipulation..
+        
+        Can be used with LrPathUtils.getStandardFilePath:
+        -------------------------------------------------     
+            adobeAppData 
+            home 
+            lightroomCommonFiles 
+            desktop 
+            documents 
+            pictures 
+            music 
+            public_desktop 
+            public_documents 
+            public_music 
+            public_pictures 
+            public_videos 
+            appData 
+            cache 
+            appPrefs 
+            desktop 
+            temp 
+            allUserAppData 
+            allUserAppDataACR 
+            applications 
+            applicationsX86 
+            users         
 --]]
 
 local String, dbg, dbgf = Object:newClass{ className = 'String', register = false }
@@ -28,29 +53,12 @@ end
 
 
 
--- "Fuzzy" logic for matching strings.
---
---  @usage Matches exact strings (case insensitive), but also matches one being a substring of the other, if length greater or equal to len-threshold.
---  @usage Good for matching things like camera model, where D300 or Nikon D300 is close enough to NIKON D300.
---
---  @param s1 string one (required).
---  @param s2 string two (required).
---  @param lenThreshold (default=5) strings must be at least this long or substring match not considered.
---
---[[ *** on hold
-function String:isFuzzyMatch( s1, s2, lenThreshold )
-    if s1 == s2 then return true end
-    local es1 = LrStringUtils.lower( s1 )
-    local es2 = LrStringUtils.lower( s2 )
-    local lim = lenThreshold or 5
-    if #es1 >= lim and #es2 >= lim then
-        if es1:find( es2 ) then return true end
-        if es2:find( es1 ) then return true end
-    else
-        return es1 == es2
-    end
+--- Escape characters that are "magic" in lua pattern strings.
+--  @usage essentially allows gsub to function as gsub-plain.
+--  @usage example: string.gsub( "my hyphenated-expression", str:luaPatternEscape( "hyphenated-expression" ), "nonhyphenatedexpression" ) -- without escaping, this would not work, since '-' is a magic character in lua patterns.
+function String:luaPatternEscape( s )
+    return (s:gsub('[%-%.%+%[%]%(%)%$%^%%%?%*]','%%%1'):gsub('%z','%%z'))
 end
---]]
 
 
 
@@ -920,8 +928,15 @@ end
 --  @param replacementCharacter optional - defaults to '-'. empty string is legal..
 --
 function String:makeFilenameCompliant( s, replacementCharacter )
-    assert( s ~= nil, "need s to make compliant" )
-    return s:gsub( "[:\\/?*]", replacementCharacter or '-' )
+    app:callingAssert( s ~= nil, "need s to make compliant" )
+    return s:gsub( '[\\/:*?"<>|]', replacementCharacter or '-' )
+end
+
+
+
+function String:makeSubpathCompliant( s, replacementCharacter )
+    app:callingAssert( s ~= nil, "need s to make compliant" )
+    return s:gsub( '[:*?"<>|]', replacementCharacter or '-' ) -- same as filename compliance, except excludes path sep (note: handle slashes externally depending on context..).
 end
 
 
@@ -950,6 +965,88 @@ function String:pathToPropForPluginKey( path )
         return fileKey:sub( pos )
     else
         return fileKey
+    end
+end
+
+
+
+--- Generates a unique character sequence (ID) governed by specified options (or default options).
+--  @usage defaults to 12 non-space printable chars - be sure to pass fnCompat if filename compatibility is required (or noGuk for a prettier sequence).
+--  @usage length should depend on desired probability for uniqueness: 1 would be fine if you only have a few and pass prevIdSet as well, but for UUID-level uniqueness consider 32+.
+--  @usage side effect: will add id to prevIdSet if passed.
+--  @usage this function is slower than the native version of LrUUID.generateUUID, but can generate shorter (or longer) IDs.
+--  @param options table (optional), possible members:
+--    <br>  fnCompat -- convenience param to filter non-filename-compatible chars (default=false).
+--    <br>  noGuk -- convenience param to use only chars that aren't funny looking (no gobble-de-guk) - implies fn-compat..
+--    <br>  lowVal -- decimal value for lowest character (default=33, noGuk => 48).
+--    <br>  highVal -- decimal value for highest character (default=126, noGuk => 122).
+--    <br>  filterChars -- array of chars requiring special filter (default=none).
+--    <br>  charSub -- character to replace filtered characters (default = random letter A-Z, not checked against lo-val/hi-val, so pass explicit if need be).
+--    <br>  filterObject -- gsub-compatible table or function specifying replacement for filtered char (default=nil), else char-sub or default.
+--    <br>  prevIdSet -- set of unique IDs previously seen, to assure no duplicate generation (recommended if small length passed).
+function String:genUniqueId( options )
+    options = options or {}
+    local prevIdSet = options.prevIdSet -- or nil
+    local lowVal = options.lowVal or options.noGuk and 48 or 33
+    local highVal = options.highVal or options.noGuk and 122 or 126
+    local noGuk = options.noGuk
+    local fnCompat = options.fnCompat
+    local filterChars = options.filterChars -- or nil
+    local filterFunc = options.filterObject -- or nil
+    local nChars = options.length or 12
+    local function sub()
+        return options.charSub or string.char( math.random( 65, 90 ) ) -- random letter: A-Z.
+    end
+    local function _uniqueId()
+        local chars = {}
+        if noGuk then
+            for i=1, nChars do
+                local byte = math.random( lowVal, highVal )
+                if byte <= 47 or ( byte >= 58 and byte <= 64 ) or ( byte >= 91 and byte <= 96 ) or byte >= 123 then -- guk
+                    chars[#chars + 1] = sub()
+                else
+                    chars[#chars + 1] = string.char( byte )
+                end
+            end
+        else
+            for i=1, nChars do
+                chars[i] = string.char( math.random( lowVal, highVal ) )
+            end
+        end
+        local uid
+        if fnCompat then -- if noGuk, it's already filename compliant, so this would hopefully be redundent, albeit relatively cheap insurance.
+            uid = str:makeFilenameCompliant( table.concat( chars ), sub() ) -- drop second return value.
+        else
+            uid = table.concat( chars )
+        end
+        if filterChars then -- likewise: unlikely to need this if using noGuk param.
+            for i, c in ipairs( filterChars ) do
+                uid = uid:gsub( c, filterFunc or sub() )
+            end
+        end
+        return uid
+    end
+    if prevIdSet then
+        local id
+        local c = 0
+        repeat
+            id = _uniqueId()
+            if prevIdSet[id] then
+                c = c + 1
+                if c == 1 then
+                    if Debug.pause then Debug.pause( "id collision" )
+                    elseif debugPause then debugPause( "id collision" ) end
+                elseif c > 10000 then
+                    error( "Unable to generate a unique ID which adheres to specified criteria." )
+                end
+            else
+                break
+            end
+        until false
+        prevIdSet[id] = true
+        return id
+    else
+        return _uniqueId()
     end
 end
 
@@ -1286,30 +1383,30 @@ end -- of dictionary initialization function
 
 
 
---- Return singular or plural count of something.
+--- Return singular or plural count of something *** deprecated in favor of str-phrase method.
 --
 --  <p>Could be enhanced to force case of singular explicitly, instead of just adaptive.</p>
 --
+--  @usage      Example: str:format( "^1 rendered.", str:plural( nRendered, "photo" ) ) - "one photo" or "2 photos"
+--  @usage      Case is adaptive when word form of singular is used. For example: str:plural( nRendered, "Photo" ) - yields "One Photo".
+--
 --  @param      count       Actual number of things.
---  @param      singular    The singular form to be used if count is 1.
+--  @param      singularWord    The singular word form to be used if count is 1.
 --  @param      useNumberForSingular        may be boolean or string<blockquote>
 --      boolean true => use numeric form of singular for better aesthetics.<br>
 --      string 'u' or 'upper' => use upper case of singular (first char only).<br>
 --      string 'l' or 'lower' => use lower case of singular (first char only).<br>
 --      default is adaptive case.</blockquote>
 -- 
---  @usage      Example: str:format( "^1 rendered.", str:plural( nRendered, "photo" ) ) - "one photo" or "2 photos"
---  @usage      Case is adaptive when word form of singular is used. For example: str:plural( nRendered, "Photo" ) - yields "One Photo".
---
-function String:plural( count, singular, useNumberForSingular )
+function String:plural( count, singularWord, useNumberForSingular )
 	local countStr
-	local suffix = singular
+	local suffix = singularWord
 	if count then
 	    if count == 1 then
 			if bool:isBooleanTrue( useNumberForSingular ) then
 				countStr = '1 '
 			else
-		        local firstChar = self:getFirstChar( singular )
+		        local firstChar = self:getFirstChar( singularWord )
 		        local upperCase
 			    if str:isString( useNumberForSingular ) then
 			        local case = str:getFirstChar( useNumberForSingular )
@@ -1331,7 +1428,7 @@ function String:plural( count, singular, useNumberForSingular )
 			end
 	    else
 	        countStr = self:to( count ) .. " "
-			suffix = self:makePlural( singular ) -- correct 99.9% of the time.
+			suffix = self:makePlural( singularWord ) -- correct 99.9% of the time.
 	    end
 	else
 		countStr = 'nil '
@@ -1341,14 +1438,73 @@ end
 
 
 
+--- Make plural phrase from singular *** deprecated in favor of str-phrase method.
+--
+--  <p>Could be enhanced to force case of singular explicitly, instead of just adaptive.</p>
+--
+--  @param      count       Actual number of things.
+--  @param      singular    The singular form to be used if count is 1.
+-- 
+--  @usage      Example: str:format( "^1 rendered.", str:pluralize( nRendered, "big photo" ) ) - "1 big photo" or "2 big photos".
+--
+function String:pluralize( count, singularPhrase )
+	local countStr
+	local suffix
+	if count then
+	    if count == 1 then
+		    countStr = '1 '
+			suffix = singularPhrase
+	    else
+	        countStr = self:to( count ) .. " "
+            local index = self:lastIndexOf( singularPhrase, " " )
+            local singularWord
+            if index > 0 then
+                singularWord = singularPhrase:sub( index + 1 )
+            else
+                singularWord = singularPhrase
+            end
+		    local pluralWord = str:makePlural( singularWord )
+		    suffix = singularPhrase:sub( 1, index ) .. pluralWord
+	    end
+	else
+		countStr = 'nil '
+        suffix = singularPhrase		
+	end
+	return countStr .. suffix
+end
+
+
+
+--- A more general purposes version of pluralize, which excludes the numeric part - can be used in other grammatical contexts too, e.g. "are" vs. "is".
+--  @usage str:fmtx( "If ^1 ^2 ^3", str:phrase( n, "I", "we" ), str:phrase( n, "was a", "were" ), str:phrase( n, "carpenter", "carpenters" ) ) -- If I was a carpenter; If we were carpenters.
+--  @usage str:fmtx( "^1 collected.", str:phrase( n, "photo was", "photos were" ) ) -- 1 photo was collected; 2 photos were collected.
+--  @param count number
+--  @param singular word or phrase to return if count==1.
+--  @param plural word or phrase to return if count~=1 (e.g. 0, or 2+).
+function String:phrase( count, singular, plural )
+    app:callingAssert( type( count ) == 'number', "first param must be number, not '^1'^2", type( count ), type(count)=='table' and " (call using colon, not dot)" or "" )
+    -- assume if count is number that singular will be string, and plural too if it exists. If used in conjunction with str:fmtx no errors will result from passing other wrong params.
+    if count == 1 then
+        return singular
+    elseif plural then
+        return plural
+    else -- lazy?
+        return self:pluralize( count, singular )
+    end
+end
+
+
+
 --- Return string with number of items in proper grammar.
+--
+--  @usage *** deprecated: having to remember which cases require exceptional handling is a bother - use pluralize instead, since pluralizing is more reliable than singularizing.
 --
 --  @usage not so sure this was a good idea. Seems making plural is more often correct than making singular. ###2
 --      <br>e.g. str:nItems( 1, "updates" ) yields "1 updatis", unless you pass the exception param (exception should probably be the default, but for backward compatibility, it's not).
 --
 --  @param count number of items
 --  @param pluralPhrase correct grammer for items if 0 or >1 item.
---  @param exception pass true iff One or one is to be displayed when 1 item. Case is adaptive.
+--  @param exception pass true iff singularizing requires special exception.
 --
 function String:nItems( count, pluralPhrase, exception )
     local suffix

@@ -110,8 +110,8 @@ end
 --
 function Session:_open( exe, cfg )
     local dir = LrPathUtils.getStandardFilePath( 'temp' ) -- at the moment cant imagine why standard temp dir wouldn't be perfectly appropriate.
-    local iname = self.name .. "_exiftool-argbufile_"
-    local oname = self.name .. "_exiftool-pipeout_"
+    local iname = str:makeFilenameCompliant( self.name ) .. "_exiftool-argbufile_" -- changed 25/Oct/2014 20:47 to make filename compliant, since name may be "anything".
+    local oname = str:makeFilenameCompliant( self.name ) .. "_exiftool-pipeout_" -- ditto.
     self.originalInputFile = LrPathUtils.child( dir, LrPathUtils.addExtension( iname, "txt" ) )
     local ifile = LrFileUtils.chooseUniqueFileName( self.originalInputFile ) -- don't overwrite an existing file.
     self.originalOutputFile = LrPathUtils.child( dir, LrPathUtils.addExtension( oname, "txt" ) )
@@ -144,7 +144,7 @@ function Session:_open( exe, cfg )
             if self.cmdfile ~= nil and fso:existsAsFile( ifile ) then
                 pcall( self.cmdfile.close, self.cmdfile )
                 
-                -- added 21/Nov/2012 1:17 ###2 risky, but avoids error, and potential accumulation of cmd (temp) files. Delete comment if no issues come 2014.
+                -- added 21/Nov/2012 1:17 ###2 risky, but avoids error, and potential accumulation of cmd (temp) files. Delete comment if no issues come 2016.
                 self.cmdfile = nil
                 
                 --Debug.pause()
@@ -249,7 +249,8 @@ end
 
 --- Accumulate argument.
 --
-function Session:addArg( arg )
+function Session:addArg( arg ) -- ###2 I tried to add variable args (for passing to str-fmtx) but it went to hell in a bucket - very strange / no clue.., yet.
+    app:callingAssert( type( arg ) == 'string', "arg must be string, not ^1", type( arg ) )
     if arg:find( '""' ) then -- ###2 consider removing this test if no incidents come 2014.
         Debug.pause( "extraneous double quotes?" )
     end
@@ -421,12 +422,41 @@ end
 function Session:execRead( tmo )
     local rslt, errm = self:execute( tmo )
     if str:is( errm ) then
-        return nil, errm, LrStringUtils.trimWhitespace( rslt or "" )
+        return nil, errm, LrStringUtils.trimWhitespace( rslt or "" ) -- sts=nil/false, err-msg=str, equiv-cmd
     else
-        return LrStringUtils.trimWhitespace( rslt ), nil
+        return LrStringUtils.trimWhitespace( rslt ), nil -- got non-empty response.
     end
 end
 
+-- ###1 move
+function ExifTool:execRead( tmo )
+    local rslt, errm = self:execute( tmo )
+    if str:is( errm ) then
+        return nil, errm, LrStringUtils.trimWhitespace( rslt or "" ) -- sts=nil/false, err-msg=str, equiv-cmd
+    else
+        return LrStringUtils.trimWhitespace( rslt ), nil -- got non-empty response.
+    end
+end
+
+-- ###1 move
+function ExifTool:execWrite( tmo )
+    local rslt, errm = self:execute( tmo )
+    if str:is( errm ) then
+        return false, errm
+    elseif str:is( rslt ) then
+        -- if rslt:find( "weren't updated due to error" ) then -- check this first
+        if rslt:find( "due to error" ) then -- check this first
+            return false, "exiftool was unable to update image file due to error"
+        --elseif rslt:find( "image files updated" ) then -- this may be present regardless
+        elseif rslt:find( "image files" ) then -- this may be present regardless. Note: says image files "...updated" if already existed, but "...created" if not.
+            return true, nil
+        else
+            return false, "unexpected exiftool response - " .. LrStringUtils.trimWhitespace( rslt )
+        end
+    else
+        return false, "there was no response from exiftool"
+    end
+end
 
 
 --  close session
@@ -447,7 +477,7 @@ function Session:_close()
         self.args = {}
         self.targs = {}
         self.closed = true -- if there is a reason why cmdfile is not simply cleared to indicate session closed, I don't remember what it is @27/Sep/2012 21:47.
-        app:logVerbose( "ExifTool Session '^1' closed.", self.name )
+        app:log( "ExifTool Session '^1' closed.", self.name ) -- this used to be verbose, until 25/Oct/2014 18:30.
     else
         app:log( "Previous exiftool session has closed: ^1", self:getName() )
     end
@@ -456,13 +486,69 @@ end
 
 
 
+--- Determine if exiftool is usable. If not (on Mac) offers options for user to take action, if appropriate.
+--
+--  @usage must be called from async task.
+--
+function ExifTool:isUsable()
+    if WIN_ENV then
+        return ExternalApp.isUsable( self )
+    end
+    -- Mac:
+    local usable, qual = ExternalApp.isUsable( self )
+    if not usable then
+        return false, qual
+    end
+    assert( str:is( self.exe ), "?" ) -- how can it be usable if no exe string?
+    if LrPathUtils.isAbsolute( self.exe ) then
+        local exec, neh = fso:isMacFileExecutable( self.exe, 'u' ) -- I *think* it just needs to be executable by user (plugin/Lr).
+        --Debug.pause( exec, neh )
+        if exec then
+            return true
+        elseif str:is( neh ) then
+            app:log( neh )
+        -- else just isn't.
+        end
+        local a = app:show{ confirm="Exiftool is not executable by 'user' (^1) - want me to correct that for you?\n \nYou can do it yourself using 'Terminal' utility and chmod command. Alternatively, you can download/install a copy which may already be executable.",
+            subs = { self.exe },
+            buttons={ dia:btn( "Yes - make executable by user only (recommended)", 'ok', false ), dia:btn( "No - try to use as is", 'other', true ), dia:btn( "No - I'll deal with it myself", 'cancel', false ) },
+            actionPrefKey = "exiftool is not executable", -- note: only "try to use as is" is memorable, since I've not really tested this: it can be as it were.
+        }
+        if a == 'ok' then
+            return fso:makeMacFileExecutable( self.exe, 'u' )
+        elseif a == 'other' then
+            return true
+        elseif a == 'cancel' then
+            return false, "exiftool is not executable"
+        else
+            app:error( "bad btn: ^1", a )
+        end
+    else
+        return true, qual
+    end
+end
+
+
+
 --- Create a new exiftool execution session.
 --
 --  @param name (string, required) unique session name (e.g. service name).
+--  @param cfg (string, optional) path to exif-tool config file.
+--  @param returnExisting (boolean, default=false) if true, return existing session if open with specified name; if false, throw error.
+--  @param assureVersion (boolean, default=false) if true, session integrity validated by assureing version number exists; if false, no such assurance.
+--      <br>    in future, there may be a comparison to a passed version number (e.g. that the actual version meets or exceeds specified version number).
 --
 --  @usage creates arg bufile in temp dir, and starts an exiftool task to listen to it (see -stay_open exiftool option).
 --
-function ExifTool:openSession( name, cfg, returnExisting )
+function ExifTool:openSession( name, cfg, returnExisting, assureVersion )
+
+    -- support table parameter passing too:
+    if type( name ) == 'table' then
+        cfg = name.cfg
+        returnExisting = name.returnExisting
+        assureVersion = name.assureVersion
+        name = name.name
+    end
 
     if not self.reg[name] then
         if returnExisting then
@@ -472,6 +558,14 @@ function ExifTool:openSession( name, cfg, returnExisting )
         end
         local sesn = Session:_new( name )
         sesn:_open( self.exe, cfg ) -- will log session open.
+        if assureVersion then
+            local verStr, afu = sesn:getVersionString()
+            if verStr then
+                app:logV( "Exiftool version: ^1", verStr )
+            else
+                app:error( afu )
+            end
+        end
         self.reg[name] = sesn
         return sesn
     elseif returnExisting then

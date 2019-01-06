@@ -358,7 +358,7 @@ end
 
 
 
---- Appends one array to another.
+--- Appends one or more arrays to another.
 --
 --  @usage      the first array is added to directly, and then returned.
 --
@@ -368,6 +368,24 @@ function Table:appendArrays( t1, ... )
     end
     return t1
 end
+
+
+
+--- Removes duplicates from an array.
+--  @return a *new* array without the duplicates.
+function Table:removeDuplicates( a1 )
+    local a = {}
+    local s = {}
+    for i, v in ipairs( a1 ) do
+        if not s[v] then
+            s[v] = true
+            a[#a + 1] = v
+        -- else dup: ignore.
+        end
+    end
+    return a
+end
+Table.removeDups = Table.removeDuplicates -- function Table:removeDups( ... ) -- compact synonym..
 
 
 
@@ -704,7 +722,7 @@ function Table:isEquiv( t1, t2, eqFunc )
         if v1 == v2 then
             return true
         else
-            Debug.pause( v1, v2 )
+            --Debug.pause( v1, v2 )
             return false
         end
     end
@@ -797,7 +815,7 @@ end
 --- Create an array from a set.
 --
 --  @param set (table, required) the set.
---  @param sort (boolean true, or function, default=don't sort) true for default sort, or function for custom sort.
+--  @param sort (boolean true, or function, default=don't sort) true for default sort (keys must be sortable, i.e. withstand lua comparison operator), or function for custom sort.
 --
 --  @usage for when you got a set, but you *need* an array.
 --  @usage synonym: 'createArray' (set implied).
@@ -808,9 +826,25 @@ function Table:createArrayFromSet( set, sort )
     end
     local array = {}
     if sort then
-        if type( sort ) ~= 'function' then
-            sort = nil -- use default sorting
+        if type( sort ) ~= 'function' then -- it's boolean true, probably, in any case: default sort.
+            sort = nil -- set sort "function" to nil.
         end
+        --[[ I'm afraid of the potential impact of the robustened checking below which I almost added - just be mindful of caveat when calling..
+        if type( sort ) ~= 'function' then -- default sort
+            local anyKey
+            for k, v in pairs( set ) do
+                anyKey = k
+            end
+            if anyKey ~= nil then
+                local s, m = pcall( function() return anyKey > anyKey end )
+                if not s then -- comparison operation failed - standard sort function will fail.
+                    app:callingError( "Keys must be comparable by lua (consider custom sort function if necessary) - ^1", m )
+                end
+                sort = nil -- ok to use default sorting
+            -- else -- the "set" (table) is empty - probably could just return {}, but to be like before the any-key check - fall through..
+            end
+        end
+        --]]
         for k, v in tab:sortedPairs( set, sort ) do
             if v then
                 array[#array + 1] = k

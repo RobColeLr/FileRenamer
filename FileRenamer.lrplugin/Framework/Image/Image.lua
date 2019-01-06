@@ -242,11 +242,10 @@ function Image:transferMetadata( fromPhoto, fromPath, profile, toPath, fmtMeta, 
 
         if profile then
             if iccProfile then
-                if #rgbTags == 1 then
+                if #rgbTags < 2 then
                     app:logVerbose( "Assigning icc profile via exif-tool: ^1", iccProfile )
                     addMetaArg( "-icc_profile<=" .. iccProfile )
                 else
-                    assert( #rgbTags >= 2, "?" )
                     app:log( "Ambiguous color-space, candidate tags:" )
                     for i, v in ipairs( rgbTags ) do
                         app:log( "#^1: namespace: ^2, name: ^3, value: ^4", i, v.ns, v.name, v.value )

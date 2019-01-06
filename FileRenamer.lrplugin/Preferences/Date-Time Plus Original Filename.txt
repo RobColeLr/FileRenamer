@@ -309,7 +309,8 @@ _t.renameBase = function( params )
     local timeStr = string.format( "%02u%02u%02u", dateTimeOriginalNumStruct.hour, dateTimeOriginalNumStruct.minute, dateTimeOriginalNumStruct.second )
     
     -- compute new filename base.
-    local origFn, errm = cat:getOriginalFilename( photo ) -- includes extension
+    local preferPresetOverFile = false -- set true if you prefer sqliteroom-compat orig-filename over that obtained via preset when both are available.
+    local origFn, errm = cat:getOriginalFilename( photo, preferPresetOverFile ) -- includes extension
     if origFn then
         local origBase = LrPathUtils.removeExtension( origFn )
         local newBase = str:fmtx( "^1-^2_^3", dateStr, timeStr, origBase )

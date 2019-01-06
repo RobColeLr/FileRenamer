@@ -648,6 +648,7 @@ end
 --
 --  @usage includes user prompt and the whole nine yards.
 --  @usage presently expects files in sibling directory of catalog (named plugin-id), prefixed by photo path.
+--  @usage *** there is a similar function for reading from xmp sidecar in custom metadata plugin manager.
 --
 --  @return status (boolean) true if operation completed without uncaught error - there may have been individual file errors logged.
 --  @return message (string) error message if status false.
@@ -873,8 +874,8 @@ end
 --  @usage      Initialized upon first use, or a forced re-read..<br>
 --              (maybe should have made whole provider return-table available, oh well - not needed yet.
 --
---  @return     metadata fields for photos, or nil.
---  @return     excuse..
+--  @return     array of metadata fields for photos, or nil. For format of reply, see Metadata.lua.
+--  @return     excuse string (if first return value is nil).
 --
 function CustomMetadata:getMetadataSpecs( reread )
     if reread or not self.metadataFieldsForPhotos then

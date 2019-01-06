@@ -216,6 +216,9 @@ end
 --  @usage: lightroo m : g etPresetDir( 'Filename Templates' ) to get fn tmpl dir..
 --  @usage: lightroo m : g etPresetDir( 'Export Presets' ) to get export preset dir..
 --
+--  @return path
+--  @return orMsg
+--
 function Lightroom:getPresetDir( subdir, create )
     local dir, err = self:computeActivePresetDir() -- leaf-name -- 'Lightroom' or 'Lightroom Settings'
     if dir then
@@ -428,22 +431,28 @@ end
 
 
 
+--- Get active dir for lightroom settings, e.g. presets n' preferences.
+--
+--  @usage re-worked 6/Dec/2014 22:48 to (hopefully) solve problem with wrong computation on Mac/Yosemite.
+--
 function Lightroom:computeActivePresetDir()
     local presetFolders = LrApplication.developPresetFolders()
     for i, v in ipairs( presetFolders ) do
-        if not v:getPath():find( "[/\\]Adobe Photoshop Lightroom" ) then
-            local candidate = LrPathUtils.parent( LrPathUtils.parent( v:getPath() ) )
-            local leafName = LrPathUtils.leafName( candidate )
-            if leafName ~= "Develop.lrmodule" then -- bingo
-                Debug.pauseIf( leafName:sub( 1, 9 ) ~= "Lightroom", "Hmm..." ) -- expecting "Lightroom" or "Lightroom Settings"
-                return candidate
-            else -- unexpected entry
-                Debug.pause( "?" )
-            end
+        if not v:getPath():find( "[/\\]Adobe Photoshop Lightroom" ) then -- presumably an Lr built-in preset.
+            local candidate = LrPathUtils.parent( v:getPath() )
+            repeat
+                local leafName = LrPathUtils.leafName( candidate )
+                if leafName == "Lightroom" or leafName == 'Lightroom Settings' then -- bingo
+                    return candidate
+                else -- not it (never is on the first try) but in Windows, it is on the second try, and on Mac/Yosemite, it may be the third try.
+                    candidate = LrPathUtils.parent( candidate )
+                end
+            until candidate == nil
+            Debug.pause( "?" )
         -- else probably a built-in dev preset.
         end
     end
-    return nil, "Unobtainable using develop preset folder path parsing"
+    return nil, "Active preset directory is unobtainable using develop preset folder path parsing"
 end
 
 

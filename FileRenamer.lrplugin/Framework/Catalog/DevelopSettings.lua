@@ -53,88 +53,83 @@ DevelopSettings.table = { -- static table with all info for all settings.
                 { id='AutoBrightness', friendly="Auto Brightness (Legacy)", dataType='boolean', appliesTo=1 },
                 { id='AutoContrast', friendly="Auto Contrast (Legacy)", dataType='boolean', appliesTo=1 },
             }},
-            { id='WhiteBalance', friendly="White Balance", dataType ='string', default='Custom', constraints = { "Custom", "As Shot", "Daylight", "Cloudy", "Shade", "Tungsten", "Fluorescent", "Flash", "Auto" } },
+            { id='WhiteBalance', friendly="White Balance", dataType ='string', default='Custom', constraints={ "Custom", "As Shot", "Daylight", "Cloudy", "Shade", "Tungsten", "Fluorescent", "Flash", "Auto" } },
             { members = { -- anonymous sub-group
-                { id='Temperature', friendly="Temperature (Raw)", dataType='number', baseAdj=50, constraints = { min=-10000, max=10000 }, prereq = { name='WhiteBalance', value='Custom' } }, -- ###3 @28/Sep/2013 9:33, these constraints seem wrong (don't want to fix without further investigation).
-                { id='Tint', friendly="Tint (Raw)", dataType='number', constraints = { min=-100, max=100 }, prereq={ name='WhiteBalance', value='Custom' } },
-                { id='IncrementalTemperature', friendly="Temperature (RGB)", dataType='number', constraints = { min=-100, max=100 }, prereq = { name='WhiteBalance', value='Custom' } }, -- for RGB files, not raw.
-                { id='IncrementalTint', friendly="Tint (RGB)", dataType='number', constraints = { min=-100, max=100 }, prereq = { name='WhiteBalance', value='Custom' } }, -- for RGB files, not raw.
+                { id='Temperature', friendly="Temperature (Raw)", dataType='number', baseAdj=50, constraints={ min=-10000, max=10000 }, prereq = { name='WhiteBalance', value='Custom' } }, -- ###3 @28/Sep/2013 9:33, these constraints seem wrong (don't want to fix without further investigation).
+                { id='Tint', friendly="Tint (Raw)", dataType='number', constraints={ min=-100, max=100 }, prereq={ name='WhiteBalance', value='Custom' } },
+                { id='IncrementalTemperature', friendly="Temperature (RGB)", dataType='number', constraints={ min=-100, max=100 }, prereq = { name='WhiteBalance', value='Custom' } }, -- for RGB files, not raw.
+                { id='IncrementalTint', friendly="Tint (RGB)", dataType='number', constraints={ min=-100, max=100 }, prereq = { name='WhiteBalance', value='Custom' } }, -- for RGB files, not raw.
             }},
             { members = {
-                { id='Exposure2012', friendly="Exposure (2012)", dataType='number', baseAdj=.1, constraints = { min=-5, max=5, precision=2 }, appliesTo=2 },
-                { id='Contrast2012', friendly="Contrast (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
-                { id='Highlights2012', friendly="Highlights (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
-                { id='Shadows2012', friendly="Shadows (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
-                { id='Whites2012', friendly="Whites (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
-                { id='Blacks2012', friendly="Blacks (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
+                { id='Exposure2012', friendly="Exposure (2012)", dataType='number', baseAdj=.1, constraints={ min=-5, max=5, precision=2 }, appliesTo=2 },
+                { id='Contrast2012', friendly="Contrast (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
+                { id='Highlights2012', friendly="Highlights (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
+                { id='Shadows2012', friendly="Shadows (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
+                { id='Whites2012', friendly="Whites (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
+                { id='Blacks2012', friendly="Blacks (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
             }},
             { members = { groupName = "Legacy Basics",
-                { id='Exposure', friendly="Exposure (Legacy)", dataType='number', constraints = { min=-4, max=4, precision=2 }, appliesTo=1 }, 
-                { id='HighlightRecovery', friendly="Highlight Recovery (Legacy)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=1 }, 
-                { id='Shadows', friendly="Blacks (Legacy)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=1 }, 
-                { id='FillLight', friendly="Fill Light (Legacy)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=1 }, 
-                { id='Brightness', friendly="Brightness (Legacy)", dataType='number', constraints = { min=-150, max=150 }, appliesTo=1 }, 
-                { id='Contrast', friendly="Contrast (Legacy)", dataType='number', constraints = { min=-50, max=100 }, appliesTo=1 }, 
-                { id='Clarity', friendly="Clarity (Legacy)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=1 }, 
+                { id='Exposure', friendly="Exposure (Legacy)", dataType='number', constraints={ min=-4, max=4, precision=2 }, appliesTo=1 }, 
+                { id='HighlightRecovery', friendly="Highlight Recovery (Legacy)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=1 }, 
+                { id='Shadows', friendly="Blacks (Legacy)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=1 }, 
+                { id='FillLight', friendly="Fill Light (Legacy)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=1 }, 
+                { id='Brightness', friendly="Brightness (Legacy)", dataType='number', constraints={ min=-150, max=150 }, appliesTo=1 }, 
+                { id='Contrast', friendly="Contrast (Legacy)", dataType='number', constraints={ min=-50, max=100 }, appliesTo=1 }, 
+                { id='Clarity', friendly="Clarity (Legacy)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=1 }, 
             }},
             { members = { -- anonymous sub-group (presence)
-                { id='Clarity2012', friendly="Clarity (2012)", dataType='number', constraints = { min=-100, max=100 }, appliesTo=2 }, 
-                { id='Vibrance', friendly="Vibrance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='Saturation', friendly="Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='Clarity2012', friendly="Clarity (2012)", dataType='number', constraints={ min=-100, max=100 }, appliesTo=2 }, 
+                { id='Vibrance', friendly="Vibrance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='Saturation', friendly="Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
         },
     },
     {   groupName = "Tone Curve",
         members={
             -- constraints are for absolute values, but relative sliders must be able to go incrementally negative too. ###2
-            { id='ParametricShadowSplit', friendly="Parametric Shadow Split", dataType='number', constraints = { min=10, max=70 } }, 
-            { id='ParametricMidtoneSplit', friendly="Parametric Midtone Split", dataType='number', constraints = { min=20, max=80 } }, 
-            { id='ParametricHighlightSplit', friendly="Parametric Highlight Split", dataType='number', constraints = { min=30, max=90 } }, 
-            -- ###2: need to define relative constraints independently of absolute constraints, somehow.
+            { id='ParametricShadowSplit', friendly="Parametric Shadow Split", dataType='number', relConstraint=0, constraints={ min=10, max=70 } }, 
+            { id='ParametricMidtoneSplit', friendly="Parametric Midtone Split", dataType='number', relConstraint=0, constraints={ min=20, max=80 } }, 
+            { id='ParametricHighlightSplit', friendly="Parametric Highlight Split", dataType='number', relConstraint=0, constraints={ min=30, max=90 } }, 
+            -- rel-constraint=0 added 29/Nov/2014 4:13, which changes handling: ###1 document this.
+            -- when applying a relative adjustment as part of a lr-dev-preset (when rel-constraint is 0), the splits are interpreted as absolute, not relative.
             
-            --[[ allows for relative def, but then absolutes are not properly constrained:
-            { id='ParametricShadowSplit', friendly="Parametric Shadow Split", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='ParametricMidtoneSplit', friendly="Parametric Midtone Split", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='ParametricHighlightSplit', friendly="Parametric Highlight Split", dataType='number', constraints = { min=-100, max=100 } }, 
-            --]]
-            
-            { id='ParametricShadows', friendly="Parametric Shadows", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='ParametricDarks', friendly="Parametric Darks", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='ParametricLights', friendly="Parametric Lights", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='ParametricHighlights', friendly="Parametric Highlights", dataType='number', constraints = { min=-100, max=100 } }, 
+            { id='ParametricShadows', friendly="Parametric Shadows", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='ParametricDarks', friendly="Parametric Darks", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='ParametricLights', friendly="Parametric Lights", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='ParametricHighlights', friendly="Parametric Highlights", dataType='number', constraints={ min=-100, max=100 } }, 
         },
     },            
     {   groupName = "HSL",
         members={
             { members={ -- anonymous sub-group (hue)
-                { id='HueAdjustmentRed', friendly="Red Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentOrange', friendly="Orange Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentYellow', friendly="Yellow Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentGreen', friendly="Green Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentAqua', friendly="Aqua Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentBlue', friendly="Blue Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentPurple', friendly="Purple Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='HueAdjustmentMagenta', friendly="Magenta Hue", dataType='number', constraints = { min=-100, max=100 } },
+                { id='HueAdjustmentRed', friendly="Red Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentOrange', friendly="Orange Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentYellow', friendly="Yellow Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentGreen', friendly="Green Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentAqua', friendly="Aqua Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentBlue', friendly="Blue Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentPurple', friendly="Purple Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='HueAdjustmentMagenta', friendly="Magenta Hue", dataType='number', constraints={ min=-100, max=100 } },
             }},
             { members={ -- sat
-                { id='SaturationAdjustmentRed', friendly="Red Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentOrange', friendly="Orange Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentYellow', friendly="Yellow Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentGreen', friendly="Green Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentAqua', friendly="Aqua Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentBlue', friendly="Blue Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentPurple', friendly="Purple Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='SaturationAdjustmentMagenta', friendly="Magenta Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='SaturationAdjustmentRed', friendly="Red Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentOrange', friendly="Orange Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentYellow', friendly="Yellow Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentGreen', friendly="Green Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentAqua', friendly="Aqua Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentBlue', friendly="Blue Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentPurple', friendly="Purple Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='SaturationAdjustmentMagenta', friendly="Magenta Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
             { members={
-                { id='LuminanceAdjustmentRed', friendly="Red Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentOrange', friendly="Orange Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentYellow', friendly="Yellow Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentGreen', friendly="Green Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentAqua', friendly="Aqua Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentBlue', friendly="Blue Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentPurple', friendly="Purple Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='LuminanceAdjustmentMagenta', friendly="Magenta Luminance", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentRed', friendly="Red Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentOrange', friendly="Orange Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentYellow', friendly="Yellow Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentGreen', friendly="Green Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentAqua', friendly="Aqua Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentBlue', friendly="Blue Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentPurple', friendly="Purple Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='LuminanceAdjustmentMagenta', friendly="Magenta Luminance", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
         },
     },
@@ -144,41 +139,41 @@ DevelopSettings.table = { -- static table with all info for all settings.
             { id='EnableGrayscaleMix', friendly="Enable Black && White", dataType = 'boolean' }, -- Note: this is the section enable/disable! ###3 (this should be deleted, once scope if impact has been evaluated).
             { members={
                 { id='AutoGrayscaleMix', friendly="B&&W Auto", dataType = 'boolean' },
-                { id='GrayMixerRed', friendly="B&&W Red", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerOrange', friendly="B&&W Orange", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerYellow', friendly="B&&W Yellow", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerGreen', friendly="B&&W Green", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerAqua', friendly="B&&W Aqua", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerBlue', friendly="B&&W Blue", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerPurple', friendly="B&&W Purple", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrayMixerMagenta', friendly="B&&W Magenta", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='GrayMixerRed', friendly="B&&W Red", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerOrange', friendly="B&&W Orange", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerYellow', friendly="B&&W Yellow", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerGreen', friendly="B&&W Green", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerAqua', friendly="B&&W Aqua", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerBlue', friendly="B&&W Blue", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerPurple', friendly="B&&W Purple", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrayMixerMagenta', friendly="B&&W Magenta", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
         },
     },
     {   groupName = "Split Toning",
         members={
-            { id='SplitToningHighlightHue', friendly="Split Toning Highlight Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='SplitToningHighlightSaturation', friendly="Split Toning Highlight Saturation", dataType='number', constraints = { min=0, max=100 } }, 
-            { id='SplitToningBalance', friendly="Split Toning Balance", dataType='number', constraints = { min=0, max=100 } }, 
-            { id='SplitToningShadowHue', friendly="Split Toning Shadow Hue", dataType='number', constraints = { min=-360, max=360 } }, 
-            { id='SplitToningShadowSaturation', friendly="Split Toning Shadow Saturation", dataType='number', constraints = { min=0, max=100 } }, 
+            { id='SplitToningHighlightHue', friendly="Split Toning Highlight Hue", dataType='number', relConstraint=0, constraints={ min=-360, max=360 } }, 
+            { id='SplitToningHighlightSaturation', friendly="Split Toning Highlight Saturation", dataType='number', constraints={ min=0, max=100 } }, 
+            { id='SplitToningBalance', friendly="Split Toning Balance", dataType='number', relConstraint=0, constraints={ min=0, max=100 } }, 
+            { id='SplitToningShadowHue', friendly="Split Toning Shadow Hue", dataType='number', relConstraint=0, constraints={ min=-360, max=360 } }, 
+            { id='SplitToningShadowSaturation', friendly="Split Toning Shadow Saturation", dataType='number', constraints={ min=0, max=100 } }, 
         },
     },
     {   groupName = "Detail",
         members={
             { members={ -- sharpness sub-group
-                { id='Sharpness', friendly="Sharpening Amount", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='SharpenRadius', friendly="Sharpening Radius", dataType='number', baseAdj=.1, constraints = { min=.5, max=3, precision=1 } }, 
-                { id='SharpenDetail', friendly="Sharpening Detail", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='SharpenEdgeMasking', friendly="Sharpening Masking", dataType='number', constraints = { min=0, max=100 } }, 
+                { id='Sharpness', friendly="Sharpening Amount", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='SharpenRadius', friendly="Sharpening Radius", dataType='number', baseAdj=.1, constraints={ min=.5, max=3, precision=1 } }, 
+                { id='SharpenDetail', friendly="Sharpening Detail", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='SharpenEdgeMasking', friendly="Sharpening Masking", dataType='number', constraints={ min=0, max=100 } }, 
             }},
             { members={ -- noise
-                { id='LuminanceSmoothing', friendly="Luminance NR", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='LuminanceNoiseReductionDetail', friendly="Luminance NR Detail", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='LuminanceNoiseReductionContrast', friendly="Luminance NR Contrast", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='ColorNoiseReduction', friendly="Color NR", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='ColorNoiseReductionDetail', friendly="Color NR Detail", dataType='number', constraints = { min=0, max=100 } },
-                { id='ColorNoiseReductionSmoothness', friendly="Color NR Smoothness", dataType='number', constraints = { min=0, max=100 } },
+                { id='LuminanceSmoothing', friendly="Luminance NR", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='LuminanceNoiseReductionDetail', friendly="Luminance NR Detail", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='LuminanceNoiseReductionContrast', friendly="Luminance NR Contrast", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='ColorNoiseReduction', friendly="Color NR", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='ColorNoiseReductionDetail', friendly="Color NR Detail", dataType='number', constraints={ min=0, max=100 } },
+                { id='ColorNoiseReductionSmoothness', friendly="Color NR Smoothness", dataType='number', constraints={ min=0, max=100 } },
             }},
             
         },
@@ -186,65 +181,65 @@ DevelopSettings.table = { -- static table with all info for all settings.
     {   groupName = "Lens Corrections",
         members = {
             { members={ -- profile-based
-                -- { id='LensProfileEnable', friendly="Lens Profile Enable", dataType='number', constraints = { 0, 1 }, -- until 5/Feb/2013 17:56 ###2 expected in some contexts, no doubt.
-                { id='LensProfileEnable', friendly="Lens Profile Enable", dataType='number', default=1, constraints = { { title="Disable", value=0 }, { title="Enable", value=1 } } }, -- @5/Feb/2013 17:56 
+                -- { id='LensProfileEnable', friendly="Lens Profile Enable", dataType='number', constraints={ 0, 1 }, -- until 5/Feb/2013 17:56 ###2 expected in some contexts, no doubt.
+                { id='LensProfileEnable', friendly="Lens Profile Enable", dataType='number', default=1, constraints={ { title="Disable", value=0 }, { title="Enable", value=1 } } }, -- @5/Feb/2013 17:56 
                 { id='LensProfileSetup', friendly="Lens Profile Setup", dataType = 'string' }, -- constraints = "LensDefaults", -- ###3
                 -- @28/Sep/2013 12:17 - Make & Model are neither settable nor readable by plugin.
                 { id='LensProfileName', friendly="Lens Profile Name", dataType ='string', prereq = { name='LensProfileEnable', value=1 } }, -- "Adobe (Canon PowerShot G12)", -- ###3
                 { id='LensProfileFilename', friendly="Lens Profile Filename", dataType ='string', prereq = { name="LensProfileEnable", value=1 } },-- , "Canon PowerShot G12 - RAW.lcp", -- ###3
-                { id='LensProfileDistortionScale', friendly="Lens Profile Distortion Scale", dataType='number', constraints = { min=-100, max=100 } }, 
-                --{ id='LensProfileDistortionScale', friendly="Lens Profile Distortion Scale", dataType='number', constraints = { min=-100, max=100 } }, - dup discovered 5/Feb/2013 18:05 - check cookmarks..
-                { id='LensProfileVignettingScale', friendly="Lens Profile Vignetting Amount", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='LensProfileDistortionScale', friendly="Lens Profile Distortion Scale", dataType='number', constraints={ min=-100, max=100 } }, 
+                --{ id='LensProfileDistortionScale', friendly="Lens Profile Distortion Scale", dataType='number', constraints={ min=-100, max=100 } }, - dup discovered 5/Feb/2013 18:05 - check cookmarks..
+                { id='LensProfileVignettingScale', friendly="Lens Profile Vignetting Amount", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
             { members={ -- color
-                { id='AutoLateralCA', friendly="Remove Chromatic Aberration", dataType='number', default=1, constraints = { { title="Disable", value=0 }, { title="Enable", value=1 } } }, 
-                { id='DefringePurpleAmount', friendly="Defringe Purple Amount", dataType='number', constraints = { min=0, max=20 } },            
-                { id='DefringePurpleHueLo', friendly="Defringe Purple Hue - Low", dataType='number', constraints = { min=0, max=90 } },            
-                { id='DefringePurpleHueHi', friendly="Defringe Purple Hue - High", dataType='number', constraints = { min=10, max=100 } },       
-                { id='DefringeGreenAmount', friendly="Defringe Green Amount", dataType='number', constraints = { min=0, max=20 } },            
-                { id='DefringeGreenHueLo', friendly="Defringe Green Hue - Low", dataType='number', constraints = { min=0, max=90 } },            
-                { id='DefringeGreenHueHi', friendly="Defringe Green Hue - High", dataType='number', constraints = { min=10, max=100 } },
+                { id='AutoLateralCA', friendly="Remove Chromatic Aberration", dataType='number', default=1, constraints={ { title="Disable", value=0 }, { title="Enable", value=1 } } }, 
+                { id='DefringePurpleAmount', friendly="Defringe Purple Amount", dataType='number', constraints={ min=0, max=20 } },            
+                { id='DefringePurpleHueLo', friendly="Defringe Purple Hue - Low", dataType='number', constraints={ min=0, max=90 } },            
+                { id='DefringePurpleHueHi', friendly="Defringe Purple Hue - High", dataType='number', constraints={ min=10, max=100 } },       
+                { id='DefringeGreenAmount', friendly="Defringe Green Amount", dataType='number', constraints={ min=0, max=20 } },            
+                { id='DefringeGreenHueLo', friendly="Defringe Green Hue - Low", dataType='number', constraints={ min=0, max=90 } },            
+                { id='DefringeGreenHueHi', friendly="Defringe Green Hue - High", dataType='number', constraints={ min=10, max=100 } },
             }},
             { members={ -- manual
-                { id='LensManualDistortionAmount', friendly="Lens Manual Distortion Amount", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PerspectiveVertical', friendly="Lens Manual Perspective Vertial", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PerspectiveHorizontal', friendly="Perspective Horizontal", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PerspectiveRotate', friendly="Perspective Rotate", dataType='number', constraints = { min=-360, max=360 } }, 
-                { id='PerspectiveScale', friendly="Lens Manual Perspective Scale", dataType='number', constraints = { min=-200, max=200 } }, 
-                { id='CropConstrainToWarp', friendly="Lens Manual Contrain To Warp", dataType='number', constraints = { { title="Disable", value=0 }, { title="Enable", value=1 } } },
-                { id='VignetteMidpoint', friendly="Lens Manual Vignette Midpoint", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='VignetteAmount', friendly="Lens Manual Vignette Amount", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='LensManualDistortionAmount', friendly="Lens Manual Distortion Amount", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PerspectiveVertical', friendly="Lens Manual Perspective Vertial", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PerspectiveHorizontal', friendly="Perspective Horizontal", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PerspectiveRotate', friendly="Perspective Rotate", dataType='number', constraints={ min=-360, max=360 } }, 
+                { id='PerspectiveScale', friendly="Lens Manual Perspective Scale", dataType='number', constraints={ min=-200, max=200 } }, 
+                { id='CropConstrainToWarp', friendly="Lens Manual Contrain To Warp", dataType='number', constraints={ { title="Disable", value=0 }, { title="Enable", value=1 } } },
+                { id='VignetteMidpoint', friendly="Lens Manual Vignette Midpoint", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='VignetteAmount', friendly="Lens Manual Vignette Amount", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
         }            
     },
     {   groupName = "Effects",
         members = {
             { members={ -- post-crop vignetting
-                { id='PostCropVignetteStyle', friendly="Post-crop Vignette Style", dataType='number', default=1, constraints = { { title="Paint", value=0 }, { title="HighlightPriority", value=1 }, { title="Color Priority", value=2 } } },
-                { id='PostCropVignetteAmount', friendly="Post-crop Vignette Amount", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PostCropVignetteMidpoint', friendly="Post-crop Vignette Midpoint", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PostCropVignetteRoundness', friendly="Post-crop Vignette Roundness", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PostCropVignetteFeather', friendly="Post-crop Vignette Feather", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='PostCropVignetteHighlightContrast', friendly="Post-crop Vignette Highlights", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='PostCropVignetteStyle', friendly="Post-crop Vignette Style", dataType='number', default=1, constraints={ { title="Paint", value=0 }, { title="HighlightPriority", value=1 }, { title="Color Priority", value=2 } } },
+                { id='PostCropVignetteAmount', friendly="Post-crop Vignette Amount", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PostCropVignetteMidpoint', friendly="Post-crop Vignette Midpoint", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PostCropVignetteRoundness', friendly="Post-crop Vignette Roundness", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PostCropVignetteFeather', friendly="Post-crop Vignette Feather", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='PostCropVignetteHighlightContrast', friendly="Post-crop Vignette Highlights", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
             { members={ -- grain
-                { id='GrainAmount', friendly="Grain Amount", dataType='number', constraints = { min=-100, max=100 } }, 
-                { id='GrainSize', friendly="Grain Size", dataType='number', constraints = { min=0, max=100 } }, 
-                { id='GrainFrequency', friendly="Grain Roughness", dataType='number', constraints = { min=-100, max=100 } }, 
+                { id='GrainAmount', friendly="Grain Amount", dataType='number', constraints={ min=-100, max=100 } }, 
+                { id='GrainSize', friendly="Grain Size", dataType='number', constraints={ min=0, max=100 } }, 
+                { id='GrainFrequency', friendly="Grain Roughness", dataType='number', constraints={ min=-100, max=100 } }, 
             }},
         },
     },
     {   groupName = "Camera Calibration",
         members = {
-            { id='ProcessVersion', friendly="Process Version", dataType = 'string', default='6.7', constraints = { { title="PV2003", value="5.0" }, { title="PV2010", value="5.7" }, { title="PV2012 (Beta)", value="6.6" }, { title="PV2012 (Current)", value="6.7" } } },
+            { id='ProcessVersion', friendly="Process Version", dataType = 'string', default='6.7', constraints={ { title="PV2003", value="5.0" }, { title="PV2010", value="5.7" }, { title="PV2012 (Beta)", value="6.6" }, { title="PV2012 (Current)", value="6.7" } } },
             { id='CameraProfile', friendly="Camera Profile", dataType = 'string', default='Adobe Standard' }, -- constraints = "Canon PowerShot G12 Adobe Standard (RC Debright)", -- ###3
-            { id='ShadowTint', friendly="Camera Calibration Shadow Tint", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='RedHue', friendly="Primary Red Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='RedSaturation', friendly="Primary Red Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='GreenHue', friendly="Primary Green Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='GreenSaturation', friendly="Primary Green Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='BlueHue', friendly="Primary Blue Hue", dataType='number', constraints = { min=-100, max=100 } }, 
-            { id='BlueSaturation', friendly="Primary Blue Saturation", dataType='number', constraints = { min=-100, max=100 } }, 
+            { id='ShadowTint', friendly="Camera Calibration Shadow Tint", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='RedHue', friendly="Primary Red Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='RedSaturation', friendly="Primary Red Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='GreenHue', friendly="Primary Green Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='GreenSaturation', friendly="Primary Green Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='BlueHue', friendly="Primary Blue Hue", dataType='number', constraints={ min=-100, max=100 } }, 
+            { id='BlueSaturation', friendly="Primary Blue Saturation", dataType='number', constraints={ min=-100, max=100 } }, 
         },
     },
     {   groupName = "Enable/Disable Groups",
@@ -268,10 +263,10 @@ DevelopSettings.table = { -- static table with all info for all settings.
     },
     {   groupName = nil, -- "Unsupported in Lr4",
         members = {
-            -- { id='LensProfileChromaticAberrationScale', friendly="Auto Tone", dataType='number', constraints = { min=-200, max=200 } }, 
-            -- { id='ChromaticAberrationB', friendly="CA Blue", dataType='number', constraints = { min=-100, max=100 }, appliesTo=0 }, -- no longer supported in Lr4, for any PV.
-            -- { id='ChromaticAberrationR', friendly="CA Red", dataType='number', constraints = { min=-100, max=100 } }, 
-            -- { id='Defringe', friendly="Defringe", dataType='number', constraints = { min=0, max=2 } }, 
+            -- { id='LensProfileChromaticAberrationScale', friendly="Auto Tone", dataType='number', constraints={ min=-200, max=200 } }, 
+            -- { id='ChromaticAberrationB', friendly="CA Blue", dataType='number', constraints={ min=-100, max=100 }, appliesTo=0 }, -- no longer supported in Lr4, for any PV.
+            -- { id='ChromaticAberrationR', friendly="CA Red", dataType='number', constraints={ min=-100, max=100 } }, 
+            -- { id='Defringe', friendly="Defringe", dataType='number', constraints={ min=0, max=2 } }, 
         },
     },                        
     {   groupName = nil, -- "Unsupported by Adobe",
@@ -279,15 +274,15 @@ DevelopSettings.table = { -- static table with all info for all settings.
             --    orientation = "AB",
             --    CropLeft = { min=-10000, max=10000, appliesTo=0 },  -- no sirve...
             --    CropAngle = { min=-1000, max=1000, appliesTo=0 }, -- no sirve...
-            --    CropBottom = { dataType='number', constraints = { min=-10000, max=10000 } }, 
-            --    CropRight = { dataType='number', constraints = { min=-10000, max=10000 } }, 
-            --    CropTop = { dataType='number', constraints = { min=-10000, max=10000 } }, 
+            --    CropBottom = { dataType='number', constraints={ min=-10000, max=10000 } }, 
+            --    CropRight = { dataType='number', constraints={ min=-10000, max=10000 } }, 
+            --    CropTop = { dataType='number', constraints={ min=-10000, max=10000 } }, 
         },
     },                        
     {   groupName = nil, -- "Unsupported by Elare Plugin Framework",
         members = {
             --    ToneCurveName2012 = { dataType = 'string' }, -- constraints = "Custom", -- ###2 - not working? - Don't need to manipulate the name directly, maybe - seems just setting parameters or points will do it.
-            --    ToneCurveName = { dataType ='string', constraints = { "Medium Contrast", "Linear", "Strong Contrast" }, appliesTo=1 }, -- Could be custom name too. ###2 - not working.
+            --    ToneCurveName = { dataType ='string', constraints={ "Medium Contrast", "Linear", "Strong Contrast" }, appliesTo=1 }, -- Could be custom name too. ###2 - not working.
             --[[    ToneCurve = { -- legacy
                     [1] = 0, 
                     [2] = 0, 
@@ -661,7 +656,7 @@ function DevelopSettings:transferAdjustments( params )
                 toDev[k] = fromDev[k]
             end
         end
-        Debug.lognpp( toDev )
+        -- Debug.lognpp( toDev )
     else
         toDev = fromDev
     end

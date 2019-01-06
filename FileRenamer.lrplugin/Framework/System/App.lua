@@ -41,8 +41,6 @@ function App:new( t )
 
     local o = Object.new( self, t )
     o.bezelGate = Gate:new{ max=10 } -- up to 10 tasks can attempt to display info - that should be more than enough, but not too many, right?
-    --o.infoGate = Gate:new{ max=10 } -- up to 10 tasks can attempt to display info - that should be more than enough, but not too many, right?
-    --o.warnErrGate = Gate:new{ max=10 } -- up to 10 tasks can attempt to display info - that should be more than enough, but not too many, right?
     
     local vt = LrApplication.versionTable() -- first supported in Lr2.0
     if vt then
@@ -209,6 +207,8 @@ end
 
 --- To support turning verbosity on/off when plugin manager dialog box is not being displayed.
 --
+--  @usage tie to global pref "log-verbose".
+--
 function App:setVerbose( verbose )
     --app:pcall{ name="App - Set Verbose Logging", async=false, guard=App.guardSilent, main=function( call )
         app.logr:enable{ verbose = verbose }
@@ -365,7 +365,15 @@ function App:initGlobalPref( name, dflt )
     local curVal = self:getGlobalPref( name )
     if curVal ~= nil then -- already init.
         if type( curVal ) ~= type( dflt ) then -- current value has wrong type (this check added 16/Jun/2014 - implication: you can't store different types of data in the same pref).
-            self:setGlobalPref( name, dflt ) -- kill current value in favor of default.
+            if self:isAdvDbgEna() then -- this clause added 27/Sep/2014 17:05 if all is well come 2016, make it so even if not adv-dbg-ena.
+                if dflt ~= nil then
+                    self:setGlobalPref( name, dflt ) -- kill current value in favor of default.
+                else -- types are not equal because dflt is nil.
+                    Debug.pause( "not wiping current pref value", curVal, "in favor of nil default for global pref named", name )
+                end
+            else  -- note: init-global-pref when dflt is nil is equivalent to set-global-pref( name, nil ) and so should be used if that is what is wanted.
+                self:setGlobalPref( name, dflt ) -- whether dflt is nil or not. @27/Sep/2014 17:06 it seems wrong if dflt is nil, since any non-nil cur-val will be wiped every call to init, but it's been this way for years so afraid to "fix", except in adv-dbg mode, as a trial.            
+            end
             return
         end
     end
@@ -738,6 +746,16 @@ function App:show( message, ... )
     return dialog:messageWithOptions( message, ... )
 end
 
+
+
+--- Clear prompts which only occur once per "session" (session meaning from the time this function is called until..).
+--  @param keyOpt (string, optional) if nil, all prompt-once's are cleared; if string, then only specified one is cleared.
+function App:clearPromptOnce( keyOpt )
+    dia:clearPromptOnce( keyOpt )
+end
+
+
+
 App.isOk = Dialog.isOk -- made this mistake too many times ;-}
 
 
@@ -863,7 +881,12 @@ function App:openFileInDefaultApp( file, prompt )
     else
         -- assume its an unregistered extension error:
         local m = "Unable to open file in default app - probably because it isn't registered. To remedy, use your operating system to specify an application to open " .. dotExt .. " files."
-        error( m )
+        if dia:isOk( m.."\n \nTry again?" ) then -- note: I am getting this error sometimes due to (probably) a timeout, anyway when retrying it works - go figure..
+            return self:openFileInDefaultApp( file )
+        else
+            return false, m
+        end
+        --error( m )
     end
 end
 
@@ -1161,6 +1184,7 @@ end
 --
 --  @return     status (boolean) true means call OK, false means call error, or nil if guarded. (true only means task started if async).
 --  @return     message (string) nil unless status is false, in which case error message is returned.
+--  @return     main function return values, unpacked.
 --
 function App:call( op, ... )
 
@@ -1279,77 +1303,22 @@ end
 
 --- Shortcut app pcall
 --
+--  @usage Examples:
+--      <br>    local status, message, mainRslt1, mainRslt2 = app:pcall{ name="my-func", function() return "rslt1", "rslt2" end } -- synchronous (with return values).
+--      <br>    app:pcall{ name="my-func", async=true, progress=true, function( call ) while not call:isQuit() do app:sleep( 1 ) end end } -- async task with cancelable progress scope (ignore return values).
+--      <br>    app:pcall{ name="my-func", gate=self.myGate, function( call ) app:sleep( 1 ) end, finale=function( call ) deleteTempFiles() end } -- async task (implied by gate) which holds off one invocation until current invocation is complete (i.e. it's gated) - includes temp-file cleanup independent of completion status.
+--
 function App:pcall( t )
     return self:call( Call:new( t ) )
 end
 
 
 
---- Shortcut app pcall
+--- Shortcut app service call.
 --
 function App:service( t )
     return self:call( Service:new( t ) )
 end
-
-
-
---[[ *** save for possible future resurrection
---  Determine if guarded call (specified by name) is in progress.
---
-function App:isGuardedCallInProgress( name )
-    return guards[name]
-end
---]]
-
-
-
---  *** Save just in case...
---  An older obsolete version - suffers from the fact that errors are still propagated to outer context
---  when calls are nested, despite inner call error handling...
---[[function App:____call( op, ... )
-
-    local param = { ... }
-    
-    if (op.guard ~= nil) and (op.guard ~= App.guardNot) then
-        --if self.guards[op.name] then ###2 - see other places like this one.
-        if guards[op.name] then
-            if op.guard == App.guardSilent then
-                self.guarded = self.guarded + 1
-                -- Debug.logn( "Guarded", op.name )
-                return true
-            else
-                self:show( { warning="^1 already started." }, op.name )
-                return true
-            end
-        else
-            guards[op.name] = true
-        end
-    end
-    
-    local cleanup = function( status, message )
-        if op.guard then
-            guards[op.name] = nil
-        end
-        LrFunctionContext.callWithContext( "app-call-cleanup", function( context )
-            context:addFailureHandler( App.defaultFailureHandler )
-            op:cleanup( status, message )
-        end )
-    end
-    
-    if op.async then
-        LrFunctionContext.postAsyncTaskWithContext( op.name, function( context )
-            -- context:addFailureHandler( failure ) - no need for failure handler if you've got a cleanup handler
-            context:addCleanupHandler( cleanup )
-            op:perform( context, unpack( param ) )
-        end )
-    else
-        LrFunctionContext.callWithContext( op.name, function( context )
-            -- context:addFailureHandler( failure ) - no need for failure handler if you've got a cleanup handler
-            context:addCleanupHandler( cleanup )
-            op:perform( context, unpack( param ) )
-        end )
-    end
-end--]]
 
 
 
@@ -1438,9 +1407,9 @@ function App:logWarning( message, ... )
         self.logr:logWarning( self.nWarnings, str:fmtx( message, ... ) )
     end
 end
-App.logWarn = App.logWarning -- synonym.
+App.logWarn = App.logWarning -- synonym - *** deprecated
 App.logw = App.logWarning -- synonym - *** deprecated.
-App.logW = App.logWarning -- synonym - *** deprecated.
+App.logW = App.logWarning -- terse synonym - recommended.
 
 
 --- Count error and log it with number - supports LOC-based formatting.
@@ -1456,9 +1425,9 @@ function App:logError( message, ... )
         self.logr:logError( self.nErrors, str:fmtx( message, ... ) )
     end
 end
-App.logErr = App.logError -- synonym
+App.logErr = App.logError -- synonym - *** deprecated.
 App.loge = App.logError -- synonym - *** deprecated.
-App.logE = App.logError -- synonym - *** deprecated.
+App.logE = App.logError -- synonym - recommended.
 
 
 --- Display momentary message - Like LrDialogs.showBezel, except if called from task, messages are guaranteed to be displayed for at least 1.2 seconds.
@@ -2697,7 +2666,7 @@ function App:logObject( t )
     --end
     if self:isAdvDbgEna() then
         --self.advDbg:logObject( t, 0 )
-        Debug.pp( t ) -- test this
+        Debug.lognpp( t )
     end
 end
 
@@ -2984,6 +2953,8 @@ end
 --  @param time (incr, default = .1) amount of time to sleep before calling done-func or checking return time.
 --  @param doneFunc (function, optional) function which returns true or non-nil to wake "pre-maturely".
 -- 
+--  @return done (boolean) true only if return due to done-func criteria, and not timeout.
+--
 function App:sleepUnlessShutdown( time, incr, doneFunc )
     if time == nil then
         app:callingError( "can't sleep for nil" )
@@ -3249,7 +3220,38 @@ end
 
 
 
---- Find framework resource reference.
+--- Get framework folder or file path.
+--
+--  @usage      for getting framework support files, like filenaming templates.
+--
+--  @param      subPath can be in Windows notation, but Mac notation is recommended, leading slash will be ignored, but probably shouldn't have a trailing slash.
+--
+--  @return     Standardized path to folder or file if present on disk, else nil.
+--  @return     if path, then 'directory' or 'file'; if no path (nil) then expected path.
+--
+function App:getFrameworkPath( subPath )
+    assert( Require.frameworkDir ~= nil, "No framework dir." )
+    if subPath:sub( 1, 1 ) == "\\" then -- remove trailing backslash, since child method is using forward-slash separator.
+        subPath = subPath:sub( 2 )
+    end
+    local path
+    if LrPathUtils.isAbsolute( Require.frameworkDir ) then
+        path = LrPathUtils.standardizePath( str:child( Require.frameworkDir, "/", subPath ) ) -- single forward slash separator, converted to native.
+    else
+        local dir = LrPathUtils.child( _PLUGIN.path, 'Framework' )
+        path = LrPathUtils.standardizePath( str:child( dir, "/", subPath ) ) -- ditto.
+    end
+    local existsAs = LrFileUtils.exists( path )
+    if existsAs then -- directory or file.
+        return path, existsAs
+    else
+        return nil, path -- check for this in calling context.
+    end
+end
+
+
+
+--- Find framework resource reference. ###2 could use get-framework-dir
 --
 --  @usage      Only use I know of at present is for displaying a vf-picture.
 --  @usage      Supports png - Lr doc says what else...

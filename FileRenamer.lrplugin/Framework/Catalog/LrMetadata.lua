@@ -53,8 +53,16 @@ end
 --  @usage      clears any previous metadata from cache - use add-fmt-metadata to, well, add formatted metadata to the cache.
 --
 function Cache:loadFormattedMetadata( photos, names )
-    --self.fmtMeta = cat:getBatchFormattedMetadata( photos, names ) - until 13/May/2014 16:42
-    self.fmtMeta = cat:getBatchFormattedMetadata( photos, names ) -- after 13/May/2014 16:42
+    if #photos == 1 then
+        local fmtMeta = {}
+        local photo = photos[1]
+        for i, id in ipairs( names ) do
+            fmtMeta[id] = photo:getFormattedMetadata( id ) -- I'm assuming it's faster to get metadata for one photo using this method insead of batch method.
+        end
+        self.fmtMeta = { [photo]=fmtMeta }
+    else -- sometimes #photos is zero, in which case this won't fail, even if non-optimal..
+        self.fmtMeta = cat:getBatchFormattedMetadata( photos, names )
+    end
     self.fmtLookup = {}
     for i, name in ipairs( names ) do
         self.fmtLookup[name] = true
@@ -105,11 +113,19 @@ Cache.getFmt = Cache.getFormattedMetadata -- function Cache:getFmt( ... ) - syno
 --  @usage      clears any previous metadata from cache - use add-raw-metadata to, well, add raw metadata to the cache.
 --
 function Cache:loadRawMetadata( photos, names )
-    --self.rawMeta = cat:getBatchRawMetadata( photos, names ) - until 13/May/2014 16:43
-    self.rawMeta = cat:getBatchRawMetadata( photos, names ) -- after 13/May/2014 16:43
+    if #photos == 1 then -- new @6/Dec/2014 20:49 - dunno if faster or not ###1
+        local rawMeta = {}
+        local photo = photos[1]
+        for i, id in ipairs( names ) do
+            rawMeta[id] = photo:getRawMetadata( id ) -- I'm assuming it's faster to get metadata for one photo using this method insead of batch method.
+        end
+        self.rawMeta = { [photo]=rawMeta }
+    else -- sometimes #photos is zero, in which case this won't fail, even if non-optimal..
+        self.rawMeta = cat:getBatchRawMetadata( photos, names )
+    end
     self.rawLookup = {} -- name lookup
     for i, name in ipairs( names ) do
-        self.rawLookup[name] = true
+        self.rawLookup[name] = true -- ok, really it's a set not a lookup.
     end
 end    
 
@@ -149,8 +165,7 @@ function Cache:addRawMetadata( photos, names )
         self:loadRawMetadata( photos, names )
         return self.rawMeta
     end
-    -- local rawMeta = cat:getBatchRawMetadata( photos, names ) - until 13/May/2014 16:43
-    local rawMeta = cat:getBatchRawMetadata( photos, names ) -- after 13/May/2014 16:43
+    local rawMeta = cat:getBatchRawMetadata( photos, names ) -- ###1 could optimize for 1-photo?
     
     -- new @1/Feb/2013 20:11:
     if rawMeta then -- this test added 17/Mar/2013 18:37
@@ -173,8 +188,7 @@ function Cache:addFormattedMetadata( photos, names )
         self:loadFormattedMetadata( photos, names )
         return self.fmtMeta
     end
-    -- local fmtMeta = cat:getBatchFormattedMetadata( photos, names ) - until 13/May/2014 16:44
-    local fmtMeta = cat:getBatchFormattedMetadata( photos, names ) -- after 13/May/2014 16:44
+    local fmtMeta = cat:getBatchFormattedMetadata( photos, names ) -- ###1 could optimize for 1-photo?
     if fmtMeta then -- this test added 17/Mar/2013 18:37
         self:_mergeMetadata( self.fmtMeta, photos, fmtMeta )
     else
@@ -432,7 +446,7 @@ function LrMetadata:init()
         { id='city', friendly="City", dataType='string', viewType='' },
         { id='stateProvince', friendly="State/Province", dataType='string', viewType='' },
         { id='country', friendly="Country", dataType='string', viewType='' },
-        { id='isoCountryCode', friendly="(ISO) Country Code" },
+        { id='isoCountryCode', friendly="(ISO) Country Code", dataType='string', viewType='' },
         { id='jobIdentifier', friendly="Job Identifier", dataType='string', viewType='' },
         { id='instructions', friendly="Instructions", dataType='string', viewType='' },
         { id='provider', friendly="Provider", dataType='string', viewType='' },
@@ -481,12 +495,12 @@ function LrMetadata:init()
         { id='sourceType', friendly="Source Type", dataType='string', viewType='' },
         { id='imageCreator', friendly="Image Creator", dataType='struct', viewType='' }, -- array-of-struct ###1
         { id='copyrightOwner', friendly="Copyright Owner", dataType='struct', viewType='' }, -- array-of-struct ###1
-        { id='licensor', friendly="Licensor", dataType='', viewType='' }, -- array-of-struct ###1
-        { id='propertyReleaseID', friendly="Property Release ID", dataType='', viewType='' },
-        { id='propertyReleaseStatus', friendly="Property Release Status", dataType='', viewType='' },
+        { id='licensor', friendly="Licensor", dataType='struct', viewType='' }, -- array-of-struct ###1
+        { id='propertyReleaseID', friendly="Property Release ID", dataType='struct', viewType='' }, -- "
+        { id='propertyReleaseStatus', friendly="Property Release Status", dataType='struct', viewType='' }, -- "
     }
     if app:lrVersion() >= 4 then
-        self.rawSetDescr[#self.rawSetDescr + 1] = { id='gps', friendly="GPS", dataType='table', viewType='' }
+        self.rawSetDescr[#self.rawSetDescr + 1] = { id='gps', friendly="GPS", dataType='struct', viewType='' } -- ?
         self.rawSetDescr[#self.rawSetDescr + 1] = { id='gpsAltitude', friendly="GPS Altitude", dataType='number', viewType='' }
         self.rawSetDescr[#self.rawSetDescr + 1] = { id='pickStatus', friendly="Pick Status", dataType='number', viewType='' }
     end
@@ -549,7 +563,7 @@ function LrMetadata:init()
         { id='city', friendly="City", dataType='string', viewType='' }, --  (string) The name of the city shown in this image
         { id='stateProvince', friendly="State/Province", dataType='string', viewType='' }, --  (string) The name of the state shown in this image
         { id='country', friendly="Country", dataType='string', viewType='' }, --  (string) The name of the country shown in this image
-        { id='isoCountryCode', friendly="(ISO) Country Code", dataType='string', viewTypee='' }, --  (string) The 2 or 3 letter ISO 3166 Country Code of the country shown in this image
+        { id='isoCountryCode', friendly="(ISO) Country Code", dataType='string', viewType='' }, --  (string) The 2 or 3 letter ISO 3166 Country Code of the country shown in this image
         { id='jobIdentifier', friendly="Job Identifier", dataType='string', viewType='' }, --  (string) A number or identifier needed for workflow control or tracking
         { id='instructions', friendly="Instructions", dataType='string', viewType='' }, --  (string) Information about embargoes', or other restrictions not covered by the Rights Usage field
         { id='provider', friendly="Provider", dataType='string', viewType='' }, --  (string) Name of person who should be credited when this image is published

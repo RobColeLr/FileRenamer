@@ -104,6 +104,7 @@ function Properties:_savePropertyFile( pth, props )
 end
 
 
+
 function Properties:_getPropTbl( pluginId, name )
     if type( name ) == 'string' then
         return propsForPlugin[pluginId], name
@@ -142,6 +143,40 @@ function Properties:_getSpanCatPropTbl( pluginId, name )
         return props, name[#name]
     end
 end
+
+
+
+--- Clear all properties for plugin.
+-- 
+function Properties:clearPropertiesForPlugin( _plugin, noFlush )
+    local pluginId
+    if _plugin == nil then
+        pluginId = _PLUGIN.id
+    elseif type( _plugin ) == 'string' then
+        pluginId = _plugin
+    else
+        pluginId = _plugin.id
+    end
+    assert( pluginId ~= nil, "bad plugin id" )
+
+    local fn = pluginId .. ".Properties.lua"
+    local pth = LrPathUtils.child( LrPathUtils.parent( catalog:getPath() ), fn )
+
+    if not propsForPlugin then
+        propsForPlugin = {}
+    end
+
+    propsForPlugin[pluginId] = {}
+    
+    if not noFlush then -- flush
+        dbgf( "Properties for plugin ^1 cleared and flushed to file ^2", pluginId, pth )
+        self:_savePropertyFile( pth, propsForPlugin[pluginId] ) -- throws error if failure.
+    else
+        dbgf( "Properties for plugin ^1 cleared, but NOT flushed (yet) to file: ^2", pluginId, pth )
+    end
+    
+end
+
 
 
 --- Set property value specified by name associated with catalog.

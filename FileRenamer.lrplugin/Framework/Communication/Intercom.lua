@@ -298,6 +298,22 @@ end
 --  auto-discards expired messages.
 function Intercom:_getMessage( file, now )
     local s, m = pcall( dofile, file ) -- translate from serialized file content to lua table.
+    if not s then
+        for i = 1, 3 do -- up to 3 tries, then give up..
+            LrTasks.sleep( .1 ) -- in case temporarily locked or something..
+            if LrFileUtils.isReadable( file ) then
+                s, m = pcall( dofile, file )
+                if s then
+                    dbgf( "Got message on retry #^1 from file: ^2", i, file )
+                    app:logV( "*** Got message on retry #^1 from file: ^2", i, file )
+                    Debug.pause( "message not readable at first, is now.." )
+                    break
+                end
+            else
+                m = "File not readable: "..file
+            end
+        end
+    end
     if s then
         if self:_isExpired( m, now or LrDate.currentTime(), file ) then
             LrFileUtils.delete( file )
@@ -309,7 +325,7 @@ function Intercom:_getMessage( file, now )
             LrFileUtils.delete( file )
             return false, "No sequence number"
         end
-    else
+    else -- the quick-try failed - hmm.
         return false, str:fmtx( "unable to get message from file due to error: ^1", m )
     end
 end
@@ -708,11 +724,12 @@ function Intercom:_listen( functionOrMethod, objectOrNil, fromList, dir, ival )
         listener = objectName -- ditto.
     end
     self.listeners[listener] = true
-    app:call( Call:new{ name="Intercom listener", async=true, guard=nil, main=function( call )
-        local s, m = app:call( Call:new{ name="Intercom message processor", async=false, main=function( call )
-            Debug.logn( str:fmt( "listening object: ^1", listener ) )
-            Debug.logn( str:fmt( "listening dir: ^1", dir ) )
-            Debug.lognpp( "listening from-list", fromList )
+    app:pcall{ name="Intercom listener", async=true, guard=nil, main=function( call )
+        --local s, m = app:call( Call:new{ name="Intercom message processor", async=false, main=function( call )
+        Debug.logn( str:fmt( "listening object: ^1", listener ) )
+        Debug.logn( str:fmt( "listening dir: ^1", dir ) )
+        Debug.lognpp( "listening from-list", fromList )
+        local function listen()
             while not shutdown and self.listeners[listener] do
                 for file in LrFileUtils.recursiveFiles( dir ) do
                     repeat
@@ -815,23 +832,24 @@ function Intercom:_listen( functionOrMethod, objectOrNil, fromList, dir, ival )
                     end
                 end ###3 - not sure what this was about now, but it's been this way for several months now @10/Oct/2012. - delete in 2015...
                 --]]
+            end -- while not shutdown etc.
+        end -- end of listen task function
+        repeat
+            local s, m = LrTasks.pcall( listen ) -- perform task function, unless normal (or abnormal/erroneous) termination.
+            if s then -- no error thrown - i.e. normal termination
+                Debug.pauseIf( not call:isQuit(), "how term? (not quit)" )
+                if broadcast then
+                    app:logVerbose( "^1 stopped listening to broadcasts.", objectName )
+                else
+                    app:logVerbose( "^1 stopped listening to messages.", objectName )
+                end
+                break
+            else -- error thrown - this can happen due to Lightroom bug (presumably), e.g. command-desc error.
+                app:alertLogE( "Intercom listening error: '^1'. Taking a moment..", m )
+                app:sleepUnlessShutdown( 3 )
             end
-        end } )
-        if shutdown then
-            -- done
-            return
-        end
-        if s then
-            if broadcast then
-                app:logVerbose( "^1 stopped listening to broadcasts.", objectName )
-            else
-                app:logVerbose( "^1 stopped listening to messages.", objectName )
-            end
-        else
-            app:logError( "Intercom listening error: '^1'. Taking 5...", m )
-            app:sleepUnlessShutdown( 5 )
-        end
-    end } )
+        until false
+    end }
 end
 
 

@@ -250,6 +250,7 @@ function Debug.init (enable)
         ThisFilename = info.source       
         end
 
+    prefs.goUntilError = false -- RDC
     breakCallReturn = true
     clearAllBreaks ()
     filenameLines = {}
@@ -337,6 +338,7 @@ Does nothing if debugging was disabled by Debug.init.
 function Debug.pause (...)
     if not Debug.enabled then return end
     if not breakCallReturn then return end
+    if prefs.goUntilError then return end -- RDC
     local values = {...}
     values.n = select("#", ...)
     showWindow ("paused", getCallExprs (3), values, nil, nil, getStackInfo (3))
@@ -356,6 +358,7 @@ Does nothing if debugging was disabled by Debug.init.
 function Debug.pauseIf (condition, ...)
     if not Debug.enabled then return end
     if not (breakCallReturn and condition) then return end
+    if prefs.goUntilError then return end -- RDC
     local values = {}
     values [1] = condition
     for i = 1, select ("#", ...) do values [i + 1] = select (i, ...) end
@@ -1121,13 +1124,12 @@ return LrFunctionContext.callWithContext ("", function (context)
     prop.displayNames = displayNames
 
         --[[ Construct Arguments and results field. ]]
-    s = ""
+    local sb = {}
     for i = 1, #displayNames do
         if i == nArgs + 1 then s = s .. "=>" .. Newline end
-        s = s .. displayNames [i] .. " = " .. Debug.pp (values [i], 0, 175) 
-            .. Newline
-        end
-    prop.arguments = s
+        sb[#sb + 1] = displayNames [i] .. " = " .. Debug.pp (values [i], 0, 500 )--, 175) -- RDC
+    end
+    prop.arguments = table.concat( sb, "\n" ) -- Newline?
 
         --[[ Display the main dialog. ]]
     local title, argsTitle
@@ -1548,6 +1550,7 @@ property table for that window.  Causes the window to exit with the value
 
 function goUntilErrorPush (button, prop)
     breakCallReturn = false
+    prefs.goUntilError = true -- RDC
     LrDialogs.stopModalWithResult (button, "goUntilError")
     end
 
@@ -1586,43 +1589,53 @@ indent (default 4): If "indent" is greater than zero, then it is the number of
 characters to use for indenting each level.  If "indent" is 0, then the value is
 pretty-printed all on one line with no newlines.
 
+@20/Aug/2014 21:47, max-chars will be translated to max-lines, at 100 chars per line.
 maxChars (default maxLines * 100): The output is guaranteed to be no longer than
 this number of characters.  If it exceeds maxChars - 3, then the last three
 characters will be "..." to indicate truncation.
 
-maxLines (default 5000): The output is guaranteed to have no more than this many
+*** only applies if max-chars is nil.
+maxLines (default 50000): The output is guaranteed to have no more than this many
 lines. If it is truncated, the last line will end with "..."
 
 ------------------------------------------------------------------------------]]
 
 function Debug.pp (value, indent, maxChars, maxLines)
     if not indent then indent = 4 end
-    if not maxLines then maxLines = 5000 end
-    if not maxChars then maxChars = maxLines * 100 end
+    if maxChars then
+        maxLines = maxChars / 100
+    end
+    if not maxLines then maxLines = 50000 end
+    --if not maxChars then maxChars = maxLines * 100 end
     
-    local s = "" -- ###1 warning: *very* inefficient to pp large items - consider calling luaText:serialize( v ) instead, then just Debug.logn( ser ).
-    local lines = 1
+    --local s = "" -- ###1 warning: *very* inefficient to pp large items - consider calling luaText:serialize( v ) instead, then just Debug.logn( ser ).
+    local sb = {}       -- line buffer.
+    local line = ""     -- current line
     local tableLabel = {}
     local nTables = 0    
 
     local function addNewline (i)
-        if #s >= maxChars or lines >= maxLines then return true end
-        if indent > 0 then
-            s = s .. "\n" .. string.rep (" ", i)
-            lines = lines + 1
-            end
-        return false
+        if #sb >= maxLines then return true end
+        --###1if #s >= maxChars or lines >= maxLines then return true end
+        sb[#sb + 1] = line
+        -- if indent > 0 then - commented out by RDC 16/Sep/2014 22:06
+        if i > 0 then -- this instead (RDC).
+            line = string.rep (" ", i)
+        else
+            line = ""
         end
+        return false
+    end
 
     local function pp1 (x, i)
         if type (x) == "string" then
-            s = s .. string.format ("%q", x):gsub ("\n", "n")
+            line = line .. string.format ("%q", x):gsub ("\n", "n")
             
         elseif type (x) ~= "table" then
-            s = s .. tostring (x)
+            line = line .. tostring (x)
             
         elseif isSDKObject(x) then
-            s = s .. tostring (x)
+            line = line .. tostring (x)
             
         else
             if tableLabel [x] then
@@ -1633,7 +1646,7 @@ function Debug.pp (value, indent, maxChars, maxLines)
             local isEmpty = true
             for k, v in pairs (x) do isEmpty = false; break end
             if isEmpty then 
-                s = s .. "{}"
+                line = line .. "{}"
                 return false
                 end
 
@@ -1641,37 +1654,40 @@ function Debug.pp (value, indent, maxChars, maxLines)
             local label = "table: " .. nTables
             tableLabel [x] = label
             
-            s = s .. "{" 
+            line = line .. "{" 
             -- if indent > 0 then s = s .. "--" .. label end -- RDC commented out 26/Oct/2011 (I find it distracting).
             local first = true
             for k, v in pairs (x) do
                 if first then
                     first = false
                 else
-                    s = s .. ", "
+                    line = line .. ", "
                     end
                 if addNewline (i + indent) then return true end 
                 if type (k) == "string" and k:match ("^[_%a][_%w]*$") then
-                    s = s .. k
+                    line = line .. k
                 else 
-                    s = s .. "["
+                    line = line .. "["
                     if pp1 (k, i + indent) then return true end
-                    s = s .. "]"
+                    line = line .. "]"
                     end
-                s = s .. " = "
+                line = line .. " = "
                 if pp1 (v, i + indent) then return true end
                 end
-            s = s .. "}"
+            line = line .. "}"
             end
 
         return false
         end
     
     local truncated = pp1 (value, 0)
-    if truncated or #s > maxChars then 
-        s = s:sub (1, math.max (0, maxChars - 3)) .. "..."
-        end
-    return s
+    if truncated then -- ###1 or #s > maxChars then 
+        line = line.."..."
+    end
+    if #line > 0 then
+        addNewline(0)
+    end 
+    return table.concat( sb, "\n" )
     end
         
 --[[----------------------------------------------------------------------------

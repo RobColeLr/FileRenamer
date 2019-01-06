@@ -25,6 +25,8 @@ end
 
 --- Constructor for new instance.
 --
+--  @usage      *** interval is overridden by pref named 'backgroundPeriod'.
+--
 --  @param      t       initialization table, including:
 --                      <br>interval (number, default: 1 second) process frequency base-rate. Recommend .2 as normal minimum, .1 if process is quick and fast response is necessary.
 --                      <br>minInitTime (number, default: 10 seconds), but recommend setting to 15 or 20 - so user has time to inspect startups in progress corner, or set to zero to suppress init progress indicator altogether.

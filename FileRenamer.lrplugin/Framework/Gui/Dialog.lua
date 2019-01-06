@@ -416,12 +416,18 @@ function Dialog:getPopupMenuSelection( param )
             end
     
             local viewOptions = tab:copy( param.viewOptions ) or {}
-            local props = LrBinding.makePropertyTable( call.context )
-            
-            props.itemValue = param.items[1].value -- can be optimized if inadequate.
-        
-            local args = {}
-            args.title = param.title or 'Choose Item'
+            local props
+            local propName
+            if param.props then
+                props = param.props
+                propName = param.propName or app:callingError( "no prop name" )
+                -- init externally if desired.
+            else
+                props = LrBinding.makePropertyTable( call.context )
+                propName = 'itemValue'
+                props[propName] = param.items[1].value
+            end
+
             local viewItems = param.viewItems or {}
             local buttons = param.buttons
             viewItems[#viewItems + 1] =
@@ -432,7 +438,7 @@ function Dialog:getPopupMenuSelection( param )
                     },
                 }
             viewOptions.bind_to_object = props
-            viewOptions.value = bind ('itemValue' )
+            viewOptions.value = bind ( propName )
             viewOptions.items = param.items
             viewOptions.fill_horizontal = param.fill_horizontal or 1
             viewItems[#viewItems + 1] =
@@ -443,9 +449,9 @@ function Dialog:getPopupMenuSelection( param )
             args.contents = vf:view( viewItems )
             local button = LrDialogs.presentModalDialog( args ) -- @3/Jul/2012 1:14, goes through standard show method instead.
             --]]
-            button = self:messageWithOptions{ confirm=args.title, viewItems=viewItems, buttons=buttons }
+            button = self:messageWithOptions{ confirm=param.title or "Choose Item", viewItems=viewItems, buttons=buttons, actionPrefKey=param.actionPrefKey }
             if button ~= 'cancel' then
-                itemValue = props.itemValue
+                itemValue = props[propName]
             else
                 msg = nil -- no message means cancel, message means error.
             end
@@ -1121,6 +1127,20 @@ end
 
 
 
+
+--- Clear prompts which only occur once per "session" (session meaning from the time this function is called until..).
+--  @param keyOpt (string, optional) if nil, all prompt-once's are cleared; if string, then only specified one is cleared.
+function Dialog:clearPromptOnce( keyOpt )
+    if not self.promptOnce or not keyOpt then
+        self.promptOnce = {}
+    else -- tbl exists and reseting just one.
+        self.promptOnce[keyOpt] = nil
+    end
+end
+
+
+
+
 --- Displays a message for the user to see, and provides options for the user to choose.
 --  
 --  @param      message ( string or table, default="" )<br>
@@ -1181,6 +1201,7 @@ function Dialog:messageWithOptions( message, ... )
     local apkPrefEna        -- global action-pref-key preference name for dont-show-again enable setting.
     local apkPrefFriendly   -- name for global property to set friendly name
     local apkPrefAnswer     -- global action-pref-key preference name for answer lookup when not showing.
+    local promptOnce        -- boolean or string-key indicating prompt should not occure multiple times (if true, string-key will be apk).
     local flavor            -- akin to "style" but delegates responsibility for all garnish to this method.
     local buttons           -- button table as passed by calling context.
     local okButton          -- for special handling of "main action" button.
@@ -1212,6 +1233,37 @@ function Dialog:messageWithOptions( message, ... )
                     return answer
                 end
             end
+        end
+        if message.promptOnce then
+            if not message.confirm then
+                if type( message.promptOnce ) == 'boolean' then
+                    if str:is( apk ) then
+                        promptOnce = apk
+                    else
+                        Debug.pause( "prompt once must be string, or if boolean must be accompanied by action pref key string" )
+                    end
+                else -- string, presumably.
+                    if str:is( message.promptOnce ) then -- this throws error if type is not string.
+                        promptOnce = message.promptOnce
+                    else
+                        Debug.pause( "prompt once can not be empty string" )
+                    end
+                end
+                if promptOnce then -- string key
+                    if not self.promptOnce then
+                        Debug.pause( "consider initializing prompt-once in start dialog method, or plugin-init.." )
+                        self.promptOnce = {}
+                    end
+                    if self.promptOnce[promptOnce] then
+                        return nil -- prompt-once is only appropriate for prompts which do not require an answer (i.e. info)
+                    else
+                        self.promptOnce[promptOnce] = true
+                    end
+                end
+            else -- ignore prompt-once if caller attempting to use with confirm message, which requires an answer each time, and hence a prompt.
+                Debug.pause( "prompt-once is not appropropriate with confirm message" )
+            end
+        -- else no prompt-once
         end
         if message.info then
             m = message.info
@@ -1420,55 +1472,59 @@ function Dialog:messageWithOptions( message, ... )
         local rowItems = {}
         local verbs = {}
         if type( buttons ) == 'table' then
-            for i, button in ipairs( buttons ) do
-                assert( str:is( button.verb ), "button verb must be non-blank string, this isn't: " .. str:to( button.verb ) )
-                assert( str:is( button.label ), "button label must be non-blank string, this isn't: " .. str:to( button.label ) )
-                if button.verb == 'ok' then
-                    if okButton then
-                        error( "Only one button can have verb='ok'" )
-                    else
-                        okButton = button
-                        args.actionVerb = okButton.label -- Adobe got confused...
-                    end
-                elseif button.verb == 'cancel' then
-                    if cancelButton then
-                        error( "Only one button can have verb='cancel'" )
-                    else
-                        cancelButton = button
-                        if cancelButton.label == 'Cancel' then
-                            if cancelButton.memorable then
-                                error( "Memorable cancel button must not be labeled 'Cancel'." )
-                            else
-                                cancelButton.forgetable = true -- assure all cancel buttons labeled 'Cancel' are not memorable (i.e. are forgetable).
-                            end
-                        -- else as long as label is not 'Cancel', its treated like any other button.
+            for i = 1, #buttons do
+                repeat
+                    local button = buttons[i]
+                    if button == nil then break end
+                    assert( str:is( button.verb ), "button verb must be non-blank string, this isn't: " .. str:to( button.verb ) )
+                    assert( str:is( button.label ), "button label must be non-blank string, this isn't: " .. str:to( button.label ) )
+                    if button.verb == 'ok' then
+                        if okButton then
+                            error( "Only one button can have verb='ok'" )
+                        else
+                            okButton = button
+                            args.actionVerb = okButton.label -- Adobe got confused...
                         end
-                        args.cancelVerb = cancelButton.label -- Adobe got verb & label terminology mixed up...
+                    elseif button.verb == 'cancel' then
+                        if cancelButton then
+                            error( "Only one button can have verb='cancel'" )
+                        else
+                            cancelButton = button
+                            if cancelButton.label == 'Cancel' then
+                                if cancelButton.memorable then
+                                    error( "Memorable cancel button must not be labeled 'Cancel'." )
+                                else
+                                    cancelButton.forgetable = true -- assure all cancel buttons labeled 'Cancel' are not memorable (i.e. are forgetable).
+                                end
+                            -- else as long as label is not 'Cancel', its treated like any other button.
+                            end
+                            args.cancelVerb = cancelButton.label -- Adobe got verb & label terminology mixed up...
+                        end
+                    else
+                        if verbs[button.verb] then
+                            -- app:logVerbose( "Redundent verb: " .. button.verb ) -- not prohibited, although represents an unusual case which is usually a bug.
+                            error( str:fmtx( "Verbs must be unique, '^1' is already taken by ^2.", button.verb, str:to( verbs[button.verb].label ) ) ) -- on the other hand, app can always do the same thing for both answers - make it an error.
+                        end
+                        verbs[button.verb] = button
+                        rowItems[#rowItems + 1] =
+                            vf:push_button {
+                                title = button.label,
+                                action = function( view )
+                                    LrDialogs.stopModalWithResult( view, button.verb )
+                                end,
+                                tooltip = button.tooltip,
+                            }
                     end
-                else
-                    if verbs[button.verb] then
-                        -- app:logVerbose( "Redundent verb: " .. button.verb ) -- not prohibited, although represents an unusual case which is usually a bug.
-                        error( str:fmtx( "Verbs must be unique, '^1' is already taken by ^2.", button.verb, str:to( verbs[button.verb].label ) ) ) -- on the other hand, app can always do the same thing for both answers - make it an error.
+                    if button.forgetable or button.memorable == false then
+                        forgetable[button.verb] = button
+                    elseif (button.memorable==nil or button.memorable) then -- default is memorable, but can be explicitly asserted.
+                        assert( not button.forgetable, "cant be both" )
+                        if button.label == 'Cancel' then
+                            error( "No buttons labeled 'Cancel' should be memorable." )
+                        end
+                        memorable[button.verb] = button
                     end
-                    verbs[button.verb] = button
-                    rowItems[#rowItems + 1] =
-                        vf:push_button {
-                            title = button.label,
-                            action = function( view )
-                                LrDialogs.stopModalWithResult( view, button.verb )
-                            end,
-                            tooltip = button.tooltip,
-                        }
-                end
-                if button.forgetable or button.memorable == false then
-                    forgetable[button.verb] = button
-                elseif (button.memorable==nil or button.memorable) then -- default is memorable, but can be explicitly asserted.
-                    assert( not button.forgetable, "cant be both" )
-                    if button.label == 'Cancel' then
-                        error( "No buttons labeled 'Cancel' should be memorable." )
-                    end
-                    memorable[button.verb] = button
-                end
+                until true
             end
             -- ok button is not optional
             if not okButton then
@@ -1672,7 +1728,7 @@ function Dialog:promptForTargetPhotos( prefix, returnComponents, call, viewItems
             buttons = { dia:btn( "Yes - All Selected Photos", 'ok' ), dia:btn( "Yes - Most-selected Only", 'other' ) }
             okPhotos = selectedPhotos
             otherPhotos = { catalog:getTargetPhoto() }
-            confirm = "^1 all ^2, or most-selected only?"
+            confirm = "^1 all ^2, or most-selected photo only?"
             subs = { prefix, str:nItems( #selectedPhotos, "selected photos" ) }
             apk = str:fmtx( "^1 - selected photos or most-selected only", prefix )
         end

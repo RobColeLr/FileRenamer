@@ -36,5 +36,5 @@ return {
             file = "mHelp.lua",
         },
     },
-    VERSION = { display = "1.14    Build: 2014-06-30 12:27:02" },
+    VERSION = { display = "1.14.1    Build: 2014-12-07 02:36:47" },
 }

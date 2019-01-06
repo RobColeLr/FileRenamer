@@ -15,6 +15,13 @@ end
 
 
 
+local devAdjSupport = {
+    Crop = true,
+    Orientation = true,
+}
+
+
+
 --- Constructor for new instance.
 --
 --  @return      new image instance, or nil.
@@ -89,8 +96,8 @@ end
 function Xmp:getXmpFile( photo, metaCache )
     assert( photo ~= nil, "no photo" )
     if metaCache == nil then
-        app:logv( "No cache" ) -- inefficient.
-        metaCache = lrMeta:createCache() -- create default/empty cache.
+        app:logv( "No cache" ) -- inefficient. to avoid this message, pass an empty cache.
+        -- metaCache = lrMeta:createCache() - create default/empty cache - wont help.
     end
     local isVirt = lrMeta:getRaw( photo, 'isVirtualCopy', metaCache ) -- accept un-cached.
     assert( isVirt ~= nil, "virt?" )
@@ -104,6 +111,19 @@ function Xmp:getXmpFile( photo, metaCache )
         return LrPathUtils.replaceExtension( path, "xmp" ), true
     elseif fmt == 'VIDEO' then
         return nil, "No xmp for videos"
+    else
+        return path
+    end
+end
+
+
+
+--- Another version of the same - bypasses check for virtual copy, and cache, and..
+--
+function Xmp:getTargetFile( path )
+    local extU = LrStringUtils.upper( LrPathUtils.extension( path ) )
+    if cat:getExtSupport( extU ) == 'raw' and extU ~= 'DNG' then
+        return LrPathUtils.replaceExtension( path, 'xmp' )
     else
         return path
     end
@@ -194,7 +214,7 @@ end
 
 
 
---- Transfer develop settings and/or metadata from one image file to another, via xmp.
+--- Transfers "all" develop settings and/or metadata from one image file to another, via xmp.
 --
 --  @usage *** Calling context MUST assure xmp source file is fresh before calling this function, otherwise data will be lost.
 --  @usage *** Likewise, dest xmp file must exist. It need not be so fresh, since it will be mostly redone, but probably a good idea to freshen it too before calling.
@@ -419,5 +439,523 @@ function Xmp:transferMetadata( params )
 end -- end of transfer metadata method.
 
 
+
+--- Transfers critical develop settings (crop and/or orientation) from one photo (real or virtual) to another (must be real), via xmp.
+--
+--  @usage If Lr SDK supported crop & orientation, this method would not be necessary - photos must be in catalog.
+--  @usage Based on code originally developed in 'Send Metadata Down In Stack' script (not plugin).
+--  @usage It would be theoretically possible to implement support for virtual photos ase targets (to-photos), by jockeying settings/xmp around, but @5/Dec/2014 19:40 that's not supported.
+--  @usage Do not set either of the metadata-pre-saved flags to false if background process, else you'll get an error. They default to true if bg call.
+--
+--  @param params (table, required) named parameters:
+--      <br>    call (Call object, recommended especially if will be called repetitively from background process) if background call, logging will be repressed..
+--      <br>    fromPhoto (LrPhoto, required) source photo - real or virtual.
+--      <br>    fromPhotoName (string, default = full path, with virtual copy name if applicable).
+--      <br>    fromDevSettings (structure, optional) source photo develop settings, if available in calling context.
+--      <br>    fromMetadataPreSaved (boolean, default=false) set true to bypass saving of source photo (xmp) metadata.
+--      <br>    toPhotoInfo (array, required) destination (real) photo info, members: photo(required), photoPath(optional), photoName(optional), devSettings(optional).
+--      <br>    toMetadataPreSaved (boolean, default=false) set true to bypass saving of destination photo (xmp) metadata.
+--      <br>    devAdjSet (table, required) recommend: { Crop=true, Orientation=true } - set of adjustments to transfer.
+--      <br>    metadataCache (LrMetadata::Cache, optional). Must be nil if background process.
+--      <br>    exifToolSession (ExifTool::Session, optional) if nil, exiftool in non-session mode will be used.
+--
+--  @return status true => no problem. if no qualification, then xfr complete, else needs a follow-up phase.
+--  @return xmp-later table (if status true) or error message (if status false).
+--
+function Xmp:transferDevelopAdjustments( params )
+
+    app:callingAssert( exifTool, "exiftool must be global" )
+    local xmpLater = params.xmpLater -- or will be created for to be passed back in if re-called in secondary phase of catalog update.
+    local call = params.call or app:callingError( "no call" )
+    local bgProcess = _G.background and call and call==background.call
+    local fromPhoto = params.fromPhoto or app:callingError( "no from-photo" )
+    local fromDevSettings = params.fromDevSettings -- or defer.
+    local fromMetadataPreSaved = params.fromMetadataPreSaved -- appropriateness checked below.
+    local metadataCache = params.metadataCache -- or nil.
+    local fromPhotoName = params.fromPhotoName or cat:getPhotoNameDisp( fromPhoto, true, metadataCache )
+    local toPhotoInfo = params.toPhotoInfo or app:callingError( "no to-photo-info)" )
+    local toMetadataPreSaved = params.toMetadataPreSaved -- appropriateness checked below.
+    local devAdjSet = params.devAdjSet or app:callingError( "no dev-adj-set" )
+    local exifToolSession = params.exifToolSession -- or nil.
+    
+    if bgProcess and metadataCache then
+        app:callingError( "Do not pass metdata cache in background mode, fresh metadata required.." )
+    end
+            
+    if not fromMetadataPreSaved then
+        if bgProcess then
+            if fromMetadataPreSaved == nil then
+                fromMetadataPreSaved = true
+            else -- false was passed in from calling context
+                app:callingError( "from-metadata-pre-saved should be nil or true if called by background process." )
+            end
+        end
+    else -- will have to be saved herein
+        if app:lrVersion() < 5 then
+            app:callingError( "from-photo metadata must be pre-saved unless Lr5 or better" )
+        -- else fine: will be saved within.
+        end
+    end
+    
+    if not toMetadataPreSaved then
+        if bgProcess then
+            if toMetadataPreSaved == nil then
+                toMetadataPreSaved = true
+            else -- false was passed in from calling context
+                app:callingError( "to-metadata-pre-saved should be nil or true if called by background process." )
+            end
+        end
+    else -- will have to be saved herein
+        if app:lrVersion() < 5 then
+            app:callingError( "to-photo metadata must be pre-saved unless Lr5 or better" )
+        -- else fine: will be saved within.
+        end
+    end
+    
+    local noAdjPresetCache = {}
+    
+    local function log( m, ... )
+        if bgProcess then
+            dbgf( "info: "..m, ... )
+        else
+            app:log( m, ... )
+        end
+    end
+    local function logV( m, ... )
+        if bgProcess then
+            dbgf( "verbose: "..m, ... )
+        else
+            app:log( m, ... )
+        end
+    end
+    local function logW( m, ... )
+        if bgProcess then
+            app:displayWarning( m, ... ) -- bg version not appropriate, since it needs an ID, and then to be cleared.. this handling makes for permanent warnings, in log, and user must clear via scope.
+        else
+            app:logW( m, ... )
+        end
+    end
+    local function logE( m, ... )
+        if bgProcess then
+            app:displayWarning( m, ... ) -- bg version not appropriate, since it needs an ID, and then to be cleared.. this handling makes for permanent errors, in log, and user must clear via scope.
+        else
+            app:logE( m, ... )
+        end
+    end
+
+    if tab:hasItems( devAdjSet ) then
+        for id, _ in pairs( devAdjSet ) do
+            if not devAdjSupport[id] then
+                app:callingError( "Invalid xmp-adj: ^1", id ) -- force calling context to get it right.
+            end
+        end
+    end
+
+    if devAdjSet.Crop and devAdjSet.Orientation then
+        logV( "Adjusting crop and orientation." )
+    elseif devAdjSet.Crop then
+        logV( "Adjusting crop, not orientation." )
+    elseif devAdjSet.Orientation then
+        logV( "Adjusting orientation, not crop." )
+    else
+        app:callingError( "'Crop' and/or 'Orientation' is required in dev-adj-set table." )
+    end
+    
+    local exifToolObject
+    
+    -- apply specified xmp-settings to photo. be careful that applied dev settings have settled (do not call this in same
+    -- with-do gate where develop settings have changed, or else develop settings will be lost).
+    -- with the above-mentioned proviso, it should do the right thing: save-metadata, boot-strap settings, read-metadata.
+    local function xmpNow( photo, xmpSettings, targetFile )
+        app:callingAssert( tab:hasItems( xmpSettings ), "no xmp settings" )
+        assert( exifTool, "no exif-tool" ) -- initialized below.
+        local saved, andThenSome = cat:saveXmpMetadata( photo ) -- save metadata and assure it's saved.
+        if saved then
+            Debug.pauseIf( andThenSome~=targetFile, "?" )
+            exifToolObject:addArg( "-overwrite_original" ) -- since only orientation and crop tags of *xmp* (in sidecar or image file), it should be reasonably safe to overwrite originals.
+            for k, v in pairs( xmpSettings ) do
+                exifToolObject:addArg( str:fmtx( '-^1=^2', k, v ) ) -- no need for quotes around value in session mode, nor emulation mode.
+            end
+            exifToolObject:setTarget( targetFile )
+            local s, m = exifToolObject:execWrite()
+            if s then
+                photo:readMetadata() -- just "queues" a read metadata request, but if command executed without error, assume the best (all pre-reqs were met).
+                return true
+            else
+                logE( m )
+            end
+            
+        else
+            logErr( andThenSome )
+        end
+    end
+    
+    -- note: errors thrown in pcall map to false, error-message returned to caller.
+    local s, m = app:pcall{ name="Transfer Develop Adjustments", function( icall )
+
+        if #toPhotoInfo == 0 then error( "No recipient photos" ) end -- return false, error-message to calling context.
+        if exifToolSession then -- good
+            exifToolObject = exifToolSession
+        else -- if must..
+            exifToolObject = exifTool -- assured above.
+            dbgf( "Exiftool session recommended for best performance." )
+        end
+        
+        if tab:isArray( xmpLater ) then -- follow-up phase callback.
+            logV( "Doing deferred xmp updating." )
+            for i, xmpRec in ipairs( xmpLater ) do
+                xmpNow( xmpRec.photo, xmpRec.xmpSettings, xmpRec.targetFile )
+            end
+            xmpLater = nil
+            return
+        else
+            logV( "Transferring xmp-based develop settings from '^1' to ^2", fromPhotoName, str:pluralize( #toPhotoInfo, "recipient photo" ) )
+        end
+        
+        local xmpSettings = {}
+        local fromIsCropped   -- boolean. from crop settings are in dev-settings and will be replicated in xmp-settings.
+        local fromOrientation -- serves as boolean too for "do still sync orientation..".
+        
+        if devAdjSet.Crop then
+            fromIsCropped = lrMeta:getRaw( fromPhoto, 'isCropped', metadataCache )
+            fromDevSettings = fromDevSettings or fromPhoto:getDevelopSettings()
+            if fromIsCropped then
+                xmpSettings.CropLeft = fromDevSettings.CropLeft
+                xmpSettings.CropRight = fromDevSettings.CropRight
+                xmpSettings.CropTop = fromDevSettings.CropTop
+                xmpSettings.CropBottom = fromDevSettings.CropBottom
+                xmpSettings.CropAngle = fromDevSettings.CropAngle
+                xmpSettings.HasCrop = true -- required.
+            else
+                xmpSettings.HasCrop = false -- presumably that's enough to kill the crop.
+            end
+        end
+        
+        if devAdjSet.Orientation then
+            local fromPhotoPath = lrMeta:getRaw( fromPhoto, 'path', metadataCache ) -- reminder: no cache in bg mode.
+            local fromTargetFile = self:getTargetFile( fromPhotoPath ) -- source of from xmp info.
+            local s
+            if not fromMetadataPreSaved then
+                local n
+                s, n = cat:saveXmpMetadata( fromPhoto )
+                if s then
+                    assert( n==fromTargetFile, "I expected a target file match - hmm.." )
+                else
+                    if devAdj.Crop then -- try for crop 1/2 better than 0/2, hopefully.
+                        logW( "Can't sync orientation - ^1", n )
+                    else
+                        error( "Can't sync orientation - ^1", n )
+                    end
+                end
+            else -- only set the pre-saved flag if metadata save confirmed externally prior to calling.
+                s = true
+            end                    
+            if s then     
+                exifToolObject:addArg( "-Orientation" )
+                exifToolObject:setTarget( fromTargetFile )
+                --fromOrientation = "Horizontal (normal)"
+                local rsp, err, cmd = exifToolObject:execRead()
+                if rsp then
+                    fromOrientation = exifTool:getValueFromPairS( rsp )
+                    if str:is( fromOrientation ) then
+                        logV( "From-photo orientation: ^1", fromOrientation )
+                        xmpSettings.Orientation = fromOrientation
+                    else
+                        fromOrientation = nil
+                        if devAdj.Crop then -- try for crop 1/2 better than 0/2, hopefully.
+                            logW( "Can't sync orientation - metadata not present in source photo." )
+                        else
+                            error( "Can't sync orientation - metadata not present in source photo.." )
+                        end
+                    end
+                else
+                    if devAdj.Crop then
+                        logW( "Can't sync orientation - ^1", err )
+                    else
+                        error( "Can't sync orientation - unable to obtain source orientation using exiftool: ^1", err )
+                    end
+                end
+            -- else assure from-orientation stays nil/false.
+            end
+        end
+        
+        for i, toInfo in ipairs( toPhotoInfo ) do
+            repeat
+                local toPhoto = toInfo.photo or error( "no to-photo" )
+                local toPhotoName = toInfo.photoName or cat:getPhotoNameDisp( toPhoto, true, metadataCache )
+                logV( "Recipient #^1: ^2", i, toPhotoName )
+                if lrMeta:getRaw( toPhoto, 'isVirtualCopy', metadataCache ) then
+                    logW( "Virtual copies can not be recipient of xmp-based metadata." )
+                    break -- try next photo
+                end
+                local photoPath = toInfo.photoPath or lrMeta:getRaw( toPhoto, 'path', metadataCache )
+                local toDevSettings = toInfo.devSettings or toPhoto:getDevelopSettings() -- relatively expensive, so minimize calls.
+                local targetFile = self:getTargetFile( photoPath )
+                
+                -- reminder: dev-settings have crop settings, but not has-crop value, so they don't necessarily mean it's currently cropped (or maybe they do - dunno..).
+                -- more robust to check is-cropped metadata - that should be a reliable indicator.
+                
+                local doCrop
+                local doOrient
+                local checkCrop
+                local checkOrient
+                local toIsCropped
+                
+                if devAdjSet.Crop then -- sync crop, nothing can prohibit it, if specified.
+                    toIsCropped = lrMeta:getRaw( toPhoto, 'isCropped', metadataCache ) -- trust this
+                    if fromIsCropped then
+                        checkCrop = true
+                    else -- from-photo is not cropped
+                        if toIsCropped then -- to-photo is
+                            checkCrop = true
+                        else -- neither is to-photo
+                            checkCrop = false -- they agree.
+                        end
+                    end
+                else -- dont sync crop
+                    checkCrop = false
+                end
+                if fromOrientation then -- sync orientation, still.
+                    -- reminder: api doc says orientation is returned with develop settings - it's not.
+                    checkOrient = true
+                else -- dont sync orientation
+                
+                end
+                if not checkCrop and not checkOrient then
+                    --Debug.pause( "No need to check crop nor orientation - to-photo is in harmony with from-photo, in terms of specified criteria." )
+                    break -- next to-photo
+                end
+                
+                -- checking one or the other or both, in xmp
+                -- checking one or the other or both, in xmp
+                -- checking one or the other or both, in xmp
+                
+                if not toMetadataPreSaved then                    
+                    local saved, wasntIt = cat:saveXmpMetadata( toPhoto ) -- save metadata and assure it's saved - uses the new Lr5 method (fingers crossed).
+                    if saved then
+                        assert( wasntIt==targetFile, "?" )
+                        logV( "xmp of to-photo successfully saved" )
+                    else
+                        logE( wasntIt )
+                        break
+                    end
+                else
+                    logV( "Calling context promises to-metadata pre-saved" ) -- as long as finding is consistent, this will not be challenged.
+                end
+
+                -- xmp should represent currently active settings (but NOT those applied in same with-do clause).                
+                -- *** reminder: one does not need to read all crop settings from xmp, but it seems worthwhile to check for sanity.
+                
+                -- step 0: assure photo has adjustments in xmp.
+                exifToolObject:addArg( "-S" )
+                if checkCrop then
+                    -- crap, it seems I can't tell the difference between no-crop and no-settings without checking all. In case of jpg anyway (not raw)
+                    -- it seems Lr is pulling all default settings (folling a reset anyway) and just saving those that have been modified.
+                    -- I don't think the raw behaves the same way, although I'm beginning to question..
+                    exifToolObject:addArg( "-HasCrop" ) -- note: @Lr5.7, crop stuff is removed if no crop, i.e. has-crop is never false, but be prepared for every possibility.
+                    exifToolObject:addArg( "-CropLeft" )
+                    exifToolObject:addArg( "-CropRight" )
+                    exifToolObject:addArg( "-CropTop" )
+                    exifToolObject:addArg( "-CropBottom" )
+                end
+                if checkOrient then
+                    -- orientation is NOT (always anyway) a crs:tag.
+                    exifToolObject:addArg( "-Orientation" )
+                end
+                exifToolObject:setTarget( targetFile )
+                
+                local rsp, err, cmd = exifToolObject:execRead() -- note: rsp is unparsed string, or nil if no response (e.g. bad exit code).
+                
+                local doLater
+                
+                if rsp then -- executed without failure, doesn't mean exiftool returned any metadata.
+                    logV( "Exiftool executed a read: ^1 bytes", #rsp )
+                
+                    local resp = exifTool:parseShorty( rsp ) -- resp is name/text-value table.
+                
+                    if checkCrop then
+                        assert( toIsCropped ~= nil, "?" )
+                        local toHasCrop
+                        if str:is( resp.HasCrop ) then
+                            logV( "'HasCrop' is in xmp: ^1", resp.HasCrop )
+                            toHasCrop = bool:booleanFromString( LrStringUtils.lower( resp.HasCrop ) )
+                        else
+                            logV( "'HasCrop' is not in xmp" )
+                            toHasCrop = false -- go with this, but be leary..
+                            doLater = toMetadataPreSaved -- the idea here is that if calling context lied (metadata was not pre-saved),
+                            -- then this conclusion is false, and therefore it's sensible to defer and sync..
+                        end
+                        if toIsCropped == toHasCrop then
+                            if toIsCropped then
+                                logV( "to-photo is cropped, xmp agrees." )
+                            else -- to-has-crop
+                                logV( "to-photo is not cropped, xmp agrees." )
+                            end
+                        else
+                            if toIsCropped then
+                                logW( "to-photo is cropped, but xmp says it's not - gonna defer xmp update, then all should be well.." )
+                                doLater = true
+                            else -- to-has-crop
+                                logW( "to-photo is not cropped, but xmp says it is - gonna defer xmp update, then all should be well.." )
+                                doLater = true
+                            end
+                        end
+                        if not doLater then -- data is consistent anyway
+                            if str:is( resp.HasCrop ) then -- has crop settings in xmp
+                                if toIsCropped then -- true
+                                    if fromIsCropped then
+                                        -- first, make sure values in xmp agree with those in dev-settings
+                                        -- Debug.pause( resp.CropLeft, toDevSettings.CropLeft, fromDevSettings.CropLeft )
+                                        -- note: so far (@6/Dec/2014 21:50), it seems precision in dev-settings matches that in xmp, so exact checking is valid - ### keep eye on future,
+                                        -- and if becomes invalid, use num--is-within method instead.
+                                        if tonumber( resp.CropLeft ) == toDevSettings.CropLeft and tonumber( resp.CropLeft ) == toDevSettings.CropLeft and tonumber( resp.CropTop ) == toDevSettings.CropTop and tonumber( resp.CropBottom ) == toDevSettings.CropBottom then
+                                            -- good
+                                            --  compare to-settings crop values to those in XMP
+                                            if toDevSettings.CropLeft == fromDevSettings.CropLeft and toDevSettings.CropLeft == fromDevSettings.CropLeft and toDevSettings.CropTop == fromDevSettings.CropTop and toDevSettings.CropBottom == fromDevSettings.CropBottom then
+                                                logV( "to-photo crop settings are same as from-photo" )
+                                                doCrop = false
+                                            else
+                                                doCrop = true
+                                            end
+                                        else -- either precision mismatch, or to-metadata not saved - cant think of anything else..
+                                            Debug.pause( "to-photo's xmp/catalog crop settings mismatch" )
+                                            if toMetadataPreSaved then
+                                                logW( "Metadata supposedly pre-saved - doesn't seem like it to me.." )
+                                            else
+                                                logW( "Metadata should have been saved, but xmp settings don't agree with catalog - hmm.." )
+                                            end
+                                            if toDevSettings.CropLeft == fromDevSettings.CropLeft and toDevSettings.CropLeft == fromDevSettings.CropLeft and toDevSettings.CropTop == fromDevSettings.CropTop and toDevSettings.CropBottom == fromDevSettings.CropBottom then
+                                                logV( "to-photo crop settings are same as from-photo, so no crop transfer" )
+                                                doCrop = false
+                                            else
+                                                logV( "to-photo crop settings are different than from-photo settings, so crop to be transferred, later." )
+                                                doCrop = true
+                                                doLater = true
+                                            end
+                                        end                                                                            
+                                    else
+                                        doCrop = true
+                                    end
+                                else -- to-photo does not have a crop
+                                    if fromIsCropped then
+                                        doCrop = true -- it can be done now.
+                                    else
+                                        logV( "Neither is cropped - motor on.." )
+                                    end
+                                end
+                            else -- we're syncing crop, and there are no crop settings in xmp (which means it's uncropped), but to's is/has crop info is consistent.
+                                if toIsCropped then
+                                    if fromIsCropped then
+                                        logW( "to-photo is supposedly cropped, but xmp not confirming it - deferred update should fix discrepancy: it should be cropped (like from photo)." )
+                                        doCrop = true
+                                        doLater = true
+                                    else
+                                        logW( "to-photo is supposedly cropped, but xmp not confirming it - deferred update should fix discrepancy: from photo is not cropped." )
+                                        doCrop = true
+                                        doLater = true
+                                    end
+                                else -- to is not cropped, and settings are absent fom xmp
+                                    if fromIsCropped then
+                                        doCrop = true
+                                        doLater = true
+                                    else -- from is not cropped, so neither is cropped, all is copacetic without further action for crop's sake.
+                                        doCrop = false
+                                    end
+                                end
+                            end
+                        end
+                    -- else not checking crop - 'nuff said..
+                    end -- end of check-crop clause.
+                    
+                    if checkOrient then
+                        assert( fromOrientation ~= nil, "?" )
+                        if resp.Orientation ~= nil then -- parsed
+                            local toOrientation = resp.Orientation
+                            if toOrientation == fromOrientation then
+                                --Debug.pause( fromOrientation )
+                                doOrient = false
+                            else
+                                --Debug.pause( fromOrientation, toOrientation )
+                                doOrient = true
+                            end
+                        else
+                            Debug.pause( "no to-photo orientation metadata" ) -- I think this field is tiff:orientation initially, but could be another field if.. - so far, exiftool is always doing the right thing regardless.
+                            doLater = true
+                        end
+                    end
+                    
+                else -- no rsp
+                    logE( err or "?" )
+                    break -- next to-photo
+                end
+                
+                -- fall-through => do-crop and/or do-orient (note: do-crop may mean remove crop if from-photo not cropped
+                if doLater then
+                    --Debug.pause( "doing later - already wrapped?", catalog.hasWriteAccess )
+                    assert( tab:hasItems( xmpSettings ), "no xmp settings??" )
+                    local preset
+                    if not noAdjPresetCache[_PLUGIN] then
+                        preset = LrApplication.addDevelopPresetForPlugin( _PLUGIN, "No adjustment", { NoOp=true } ) -- no-op preset will be recreated once each plugin run.
+                        noAdjPresetCache[_PLUGIN] = preset
+                    else
+                        preset = noAdjPresetCache[_PLUGIN]
+                    end
+                    if preset then
+                        if catalog.hasWriteAccess then
+                            toPhoto:applyDevelopPreset( preset, _PLUGIN ) -- will be "applied" upon exit from with-do gate.
+                            xmpLater = xmpLater or {}
+                            xmpLater[#xmpLater + 1] = { photo=toPhoto, xmpSettings=xmpSettings, targetFile=targetFile } -- defer xmp adjustment until after "no-op" develop setting change is committed.
+                        else
+                            local s, m = cat:update( bgProcess and -5 or 30, "No-op adjustment", function( context, phase )
+                                if phase == 1 then
+                                    toPhoto:applyDevelopPreset( preset, _PLUGIN ) -- will be "applied" upon exit from with-do gate.
+                                    return false -- not finished upating catalog.
+                                else
+                                    assert( tab:hasItems( xmpSettings ), "no xmp settings???" )
+                                    local xmpd = xmpNow( toPhoto, xmpSettings, targetFile ) -- auto-resaves metadata.
+                                    if xmpd then
+                                        logV( "xmp'd after no-op preset applied" )
+                                    end
+                                end    
+                            end )
+                            if s then
+                                log( "adjustments applied" )
+                            else
+                                logE( m )
+                            end
+                        end
+                    else
+                        logErr( "Unable to create preset for no-op adjustment." )
+                    end
+                    break -- done with this recipient, but not all recipients.
+                elseif doCrop or doOrient then
+                    -- settings already exist, may as well do it now - 'twill be more efficient if *all* are doable now, but hard to know ahead of time..
+                    --Debug.pause( "doing xmp now with these settings", xmpSettings.CropRight )
+                    local xmpd = xmpNow( toPhoto, xmpSettings, targetFile ) -- no catalog write access required.
+                    if xmpd then
+                        logV( "xmpd in first pass" )
+                        --n = n + 1
+                    -- else error already logged
+                    end
+                else -- all matches
+                    logV( "No need to do crop or orientation." )
+                    break
+                end
+
+            until true -- end of photo processing
+            -- do next photo
+        end -- end of for all to-photo info records.
+        
+    end }
+    
+    if s then
+        return true, xmpLater
+    else
+        return false, m
+    end
+
+end -- end of transfer metadata method.
+Xmp.xfrDevAdj = Xmp.transferDevelopAdjustments -- function Xmp:xfrDevAdj(...) -- short form.
+--
 
 return Xmp

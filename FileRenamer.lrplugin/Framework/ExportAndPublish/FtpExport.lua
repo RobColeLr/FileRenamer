@@ -407,6 +407,15 @@ end
 
 
 
+function FtpExport:getJobDir()
+    assert( self.exportParams, "no export params" )
+    assert( self.jobNum, "no job num" )
+    local srvcName = self:_getServiceName( self.exportParams )
+    return ftpAgApp:getJobDir( srvcName, self.jobNum )
+end
+
+
+
 function FtpExport:uploadFile( photoPath )
     local srvcName = self:_getServiceName( self.exportParams )
     local s, m = ftpAgApp:uploadFile( srvcName, photoPath, self.jobNum, self.taskNum ) -- note: job-num specified job-dir, task-num specified ordering in control-file (disk) "queue".

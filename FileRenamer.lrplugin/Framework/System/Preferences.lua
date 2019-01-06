@@ -952,9 +952,10 @@ function Preferences:getPref( propName, presetName )
     end
     if value == nil then
         app:callingAssert( gbl:getValue( 'systemSettings' ), "No system settings" )
-        local key = app:getSettingsKey( presetName ) -- get root settings key for preset.
-        key = systemSettings:getKey( key, propName ) -- get child key corresponding to property name
-        value = systemSettings:getValue( key ) -- get settings value corresponding to absolute key, from prefs (no options).
+        local rootKey = app:getSettingsKey( presetName ) -- get root settings key for preset.
+        local propKey = systemSettings:getKey( rootKey, propName ) -- get child key corresponding to property name
+        value = systemSettings:getValue( propKey ) -- get settings value corresponding to absolute key, from prefs (no options).
+        if value == nil then value = systemSettings:getRootValue( rootKey, propName ) end -- support prefs in root of settings file if not exposed via UI (like advanced settings).
     end
     return value
 end
