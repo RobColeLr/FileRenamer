@@ -1,4 +1,4 @@
-Licensing for rc Raw Plus Jpeg, Copyright (c) 2010-2011, robcole.com
+Licensing for rc File Renamer, Copyright (c) 2010-2011, robcole.com
 
 Artistic License 2.0
 
