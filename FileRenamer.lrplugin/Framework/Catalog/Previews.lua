@@ -1024,7 +1024,7 @@ function Previews:getSmartPreview( params ) -- the easy way
     app:callingAssert( params ~= nil, "no params" )
     local photo = app:callingAssert( params.photo, "no photo" )
     local spi = lrMeta:getRaw( photo, 'smartPreviewInfo', cache ) -- accepting if uncached is implied when using this method.
-    if spi then
+    if spi and spi.smartPreviewPath then -- spi is empty table when no sp in Lr5, still: good to check..
         return spi.smartPreviewPath
     else
         return nil, "No smart preview available."

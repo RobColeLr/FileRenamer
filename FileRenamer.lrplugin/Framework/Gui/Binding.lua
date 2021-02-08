@@ -23,16 +23,18 @@ end
 
 
 
---- Define binding which asserts (true) if all criteria match.
+--- Define binding which returns match-value (or true) if all criteria match.
 --
 --  @usage all keys must be from same property table, which must be passed.
+--  @usage example:
+--      <br>    value = binding:getMatchBinding{ props=props, trueKeys={ 'preReq1', 'preReq2' }, valueTable={ a=2, b=3 }, matchValue="itsamatch" }
 --
 --  @param params
 --      <br>    props (property-table, required) bind-to object.
---      <br>    trueKeys (array, optional) of those having to be true
+--      <br>    trueKeys (array, optional) of those having to be true.
 --      <br>    unTrueKeys (array, optional) of those having to be false or nil.
---      <br>    valueTable (table, optional) keys are keys and values are values which must match for truth.
---      <br>    unValueTable (table, optional) keys are keys and values are values which must NOT match for truth.
+--      <br>    valueTable (table, optional) keys are keys and values are values which must match.
+--      <br>    unValueTable (table, optional) keys are keys and values are values which must NOT match.
 --      <br>    matchValue (any, default: true) value to return upon match.
 --      <br>    unMatchValue (any, default: false) value to return if not matching.
 --
@@ -113,24 +115,16 @@ end
 
 
 
---[[
-function Binding:getUniPrefBinding( keys, implFunc )
-    return LrView.bind {
-        bind_to_object = prefs,
-        keys = keys,
-        operation = function()
-        
-        end
-    }
-end
---]]
-
-
+--- Binding which prohibits forgetting bind-to object - deprecated ***.
+--
+--  @param to (required) prefs or props.
+--  @param t (required) binding table, or string key.
+--
 function Binding:bind( to, t )
     if type( t ) == 'table' then
         t.bind_to_object = to
         return LrView.bind( t )
-    else
+    else -- most common usage
         return LrView.bind {
             key=t,
             bind_to_object=to

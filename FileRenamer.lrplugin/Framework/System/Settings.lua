@@ -147,6 +147,15 @@ end
 
 
 
+function Settings:getRootValue( rootKey, propName )
+    if self.reg[rootKey] then 
+        return self.reg[rootKey][propName]
+    -- else return nil
+    end
+end
+
+
+
 --- Get settings root view items and lookup.
 function Settings:getViewItemsAndLookup( call )
     local s, m, viewItems, viewLookup = app:call( Call:new{ name="Getting additional settings view items", async=false, main=function( icall )

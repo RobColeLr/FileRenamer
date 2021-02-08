@@ -387,7 +387,7 @@ function Call:perform( context, ... )
             if self.progress then
                 self.cap = "Please wait..."
                 self.scope = LrProgressScope {
-                    title = str:fmtx( "^1 - ^2", app:getShortAppName(), self.name ),
+                    title = str:fmtx( "^1 - ^2", app:getShortAppName(), self.name:gsub( "&&", "&" ) ),
                     functionContext = context,
                     caption = self.cap, -- change this if you want.
                     -- can cancel
@@ -407,14 +407,14 @@ function Call:perform( context, ... )
             self.cap = self.progress.caption or "Please wait..."
             if self.progress.modal then
                 self.scope = LrDialogs.showModalProgressDialog{
-                    title = self.progress.title or str:fmtx( "^1 - ^2", app:getShortAppName(), self.name ),
+                    title = self.progress.title or str:fmtx( "^1 - ^2", app:getShortAppName(), self.name:gsub( "&&", "&" ) ),
                     caption = self.cap,
                     functionContext = context,
                     cannotCancel = self.progress.cannotCancel, -- or false (i.e. default: *can* cancel).
                 }
             else
                 self.scope = LrProgressScope {
-                    title = self.progress.title or str:fmtx( "^1 - ^2", app:getShortAppName(), self.name ),
+                    title = self.progress.title or str:fmtx( "^1 - ^2", app:getShortAppName(), self.name:gsub( "&&", "&" ) ),
                     caption = self.cap,
                     functionContext = context,
                     cannotCancel = self.progress.cannotCancel, -- or false (i.e. default: *can* cancel).

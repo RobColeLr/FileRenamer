@@ -139,6 +139,16 @@ end
 
 
 
+--- Permit skipping final dialog even if NOT ok.
+--
+--  @param apk action-pref-key to enable; nil to disable.
+--
+function Service:enableSuppressionOfFinalDialogBoxDespiteErrorsAndWarnings( apk )
+    self.finalDialogBoxActionPrefKey = apk
+end
+
+
+
 --- Perform finale...
 --
 --  <p>See Call parent class for more info.</p>
@@ -240,9 +250,10 @@ function Service:cleanup( status, message )
         -- present final dialog box.
         local actionPrefKey
         local buttons = nil
-        if nErrors == 0 and nWarnings == 0 and app:isRealMode() and not str:is( self.mandatoryMessage ) then
+        -- note: final-dialog-box-action-pref-key has been added for cases when calling context must allow suppression even if errors/warnings (e.g. auto-publishing environment).
+        if self.finalDialogBoxActionPrefKey or ( nErrors == 0 and nWarnings == 0 and app:isRealMode() and not str:is( self.mandatoryMessage ) ) then
             if not self:isAborted() then
-                actionPrefKey = self.name .. " - view logs"
+                actionPrefKey = ( nErrors ~= 0 or nWarnings ~= 0 ) and self.finalDialogBoxActionPrefKey or ( self.name .. " - view logs" )
             -- else do not permit "do not show" functionality if service was aborted.
             end
             if app:isLoggerEnabled() then
@@ -256,7 +267,7 @@ function Service:cleanup( status, message )
             end
         end
         
-        if self.scope then -- might as well kill the cope before putting up the final dialog box - if any...
+        if self.scope then -- might as well kill the scope before putting up the final dialog box - if any...
             if status then
                 -- self.scope:done() -- commented out 27/Oct/2011 16:59
                 self.scope:setCaption( "Finished - see dialog box for results..." ) -- added 27/Oct/2011 17:00

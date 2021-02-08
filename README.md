@@ -2,13 +2,13 @@ Since the death of RobCole.com, many who uses Rob Cole's Lightroom plugin cannot
 
 # Contents
 
-- `Cookmarks.lrplugin`
+- `FileRenamer.lrplugin`
 
 # Todo
 
 Please share if you have these files!
 
-- [ ] original readme & license[^1] & any other things
-- [ ] newer versions, if available.
+- [x] original readme & license & any other things
+- [x] newer versions, if available.
 
-[^1]: The license in this repo is currently from [RawPlusJpeg/RawPlusJpeg.LICENSE.txt at master · atramos/RawPlusJpeg](https://github.com/atramos/RawPlusJpeg/blob/master/RawPlusJpeg.LICENSE.txt). While I don't think RobCole used different licenses for different plugins, technically we need the license for this particular plugin.
+I have uploaded Version 1.14.1 Dated 2014-12-07

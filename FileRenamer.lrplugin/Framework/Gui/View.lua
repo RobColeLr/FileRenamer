@@ -739,10 +739,13 @@ function View:startFtpSettingsView( object, props, enabledBinding, retItems, lab
                         --call:cancel()
                         return
                     end
-                    if not str:is( settings.password ) then
+                    if str:is( settings.password ) then
+                        --Debug.pause() - interferes with modal progress dialog, dang it.
+                    else
                         app:error( "'Password' can not be blank." )
                     end
 
+                    app:logV( "Connecting.." )
                     local s, m = ftp:connect() -- Checks for dir existence at root.
                     if s then
                         app:log( "Connected to '^1' as '^2'.", settings.server, settings.username )

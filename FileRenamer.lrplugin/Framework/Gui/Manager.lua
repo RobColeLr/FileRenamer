@@ -20,6 +20,11 @@ end
 --
 function Manager:new( t )
     local o = Object.new( self, t )
+    o.basePrefChgGate = Gate:new{ max = 50 } -- reminder: extended class needs
+        -- Note: it is recommended to also (independently) gate extended classes pref change handlers.
+    o.propChgGate = Gate:new{ max = 50 } -- it is recommended to use this in property change handling method of extended class, so calls don't recurse but no changes get lost (i.e. call is gated).
+        -- remember: it's possible for multiple gated calls to be executed back-to-back, so use prompt-once parameter of app-show method to eliminate redundent prompts.
+        -- I assume 50 will be enough, if not this gate can be overridden in "derived" (extension) class.
     return o
 end
 
@@ -109,13 +114,24 @@ end
 --  @param      value       New preference value.
 --  @param      call        
 --
+--  @usage      this method is limited to global prefs. prefs tied to preset go through prop-change-handler-method instead.
 --  @usage      *** IMPORTANT: The base class method is critical and must be called by derived class.
 --  @usage      Changed items are typically changed via the UI and are bound directly to lr-prefs.
 --              <br>props are not bound to prefs explicitly/directly, but need to be reloaded if the pref set name changes.
 --
 function Manager:prefChangeHandlerMethod( _id, _prefs, key, value, call )
 
-    app:call( Call:new{ name="prefChangeHandlerMethod", async=true, guard=App.guardSilent, main=function( call ) -- ###4 changed to async fairly recently (presumably 2012 or 2013) - delete comment if no issues come 2014.
+    local gate
+    local guard
+    local async
+    if app:isAdvDbgEna() then
+        gate = self.basePrefChgGate
+    else
+        async=true
+        guard=App.guardSilent
+    end
+    --app:pcall{ name="prefChangeHandlerMethod", async=true, guard=App.guardSilent, main=function( call ) -- ###4 changed to async fairly recently (presumably 2012 or 2013) - delete comment if no issues come 2015.
+    app:pcall{ name="baseManagerPrefChangeHandlerMethod", gate=gate, guard=guard, async=async, function( call ) -- ###1 changed to gated 27/Sep/2014 17:43 on a trial basis (adv-dbg-only). If all goes well, make it permanent come 2016.
 
         assert( prefs == _prefs, "pref change handler method is for prefs only" )
         
@@ -160,6 +176,7 @@ function Manager:prefChangeHandlerMethod( _id, _prefs, key, value, call )
         --]]
         
         elseif name == 'logVerbose' then
+            -- this is the same code as app--set-log-verbose
             app.logr:enable{ verbose = value }
             if value then
                 app:setGlobalPref( 'infoSynopsis', "Logging verbosely" )
@@ -173,7 +190,7 @@ function Manager:prefChangeHandlerMethod( _id, _prefs, key, value, call )
         end
     end, finale=function( call )
         --
-    end } )    
+    end }
 end
 
 
@@ -198,7 +215,8 @@ end
 function Manager:startDialogMethod( props )
 
     self.props = props
-
+    dia:clearPromptOnce()
+    
     -- dbg("loading props corresponding to set ", app:getGlobalPref( 'presetName' ) )
     app:switchPreset( props )
     
@@ -583,17 +601,14 @@ function Manager:sectionsForTopOfDialogMethod( vf, props )
     	                    local answerPfx = "actionPrefKey_answer_"
     	                    local friendlyPfx = "actionPrefKey_friendly_"
     	                    local enaPfxLen = enaPfx:len()
-    	                    local friendlyPfxLen = friendlyPfx:len()
                             for k, v in app:getGlobalPrefPairs() do -- works with pref-mgr or none
                                 if str:isBeginningWith( k, enaPfx ) and v then -- apk enabled.  up 'til 25/Apr/2014 2:52 ena-pfx was being interpreted as regex.
                                     local friendlySfx = k:sub( enaPfxLen + 1 )
-                                    local friendlyKey = friendlyPfx .. friendlySfx
                                     local enaName = enaPfx .. friendlySfx
                                     local ansName = answerPfx .. friendlySfx
                                     local friendlyName = friendlyPfx .. friendlySfx
                                     local friendly = app:getGlobalPref( friendlyName )
                                     items[#items + 1] = friendly
-                                    local sfx = k:sub( enaPfxLen + 1 )
                                     lookup[friendly] = { enaName, ansName, friendlyName } 
                                 end
                             end
@@ -616,7 +631,7 @@ function Manager:sectionsForTopOfDialogMethod( vf, props )
                                 -- else canceled.
                                 end
                             else
-                                app:show{ info="No warnings to reset." }
+                                app:show{ info="No prompts to reset." }
                             end
                                 
     	                end } )
@@ -671,6 +686,11 @@ function Manager:sectionsForTopOfDialogMethod( vf, props )
                         end } )
                     end
                 },           
+        		vf:checkbox {
+        			title = "Go Until Error",
+        			bind_to_object = LrPrefs.prefsForPlugin( _PLUGIN.id..".Debug" ), -- ###3
+        			value = bind( 'goUntilError' ),
+        		},
     		}
 
     	advDbgSection[#advDbgSection + 1] = vf:spacer { height = 5 }

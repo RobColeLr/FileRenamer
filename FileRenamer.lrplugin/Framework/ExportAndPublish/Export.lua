@@ -31,6 +31,9 @@ end
 --
 function Export:newDialog( t )
     local o = Object.new( self, t )
+    o.propChgGate = Gate:new{ max = 50 } -- it is recommended to use this in property change handling method, so calls don't recurse but no changes get lost (i.e. call is gated).
+        -- remember: it's possible for multiple gated calls to be executed back-to-back, so use prompt-once parameter of app-show method to eliminate redundent prompts.
+        -- I assume 50 will be enough, if not this gate can be overridden.
     return o
 end
 Export.new = Export.newDialog -- function Export:new( ... ) -- synonym for (minimal) object which has access to export methods, but not representing an export in progress (with session, context, settings, ... ).
@@ -89,23 +92,25 @@ end
 function Export:_getExportParams( props )
     local myName = props.LR_publish_connectionName
     if str:is( myName ) then
-        local services = catalog:getPublishServices( _PLUGIN.id )
-        for i, service in ipairs( services ) do
-            local name = service:getName()
+        local pservices = catalog:getPublishServices( _PLUGIN.id )
+        for i, pservice in ipairs( pservices ) do
+            local name = pservice:getName()
             --Debug.logn( i, name )
             if name == myName then
-                local ps = service:getPublishSettings()
+                local ps = pservice:getPublishSettings()
                 if ps ~= nil then
-                    local ep = ps["< contents >"]
+                    local ep = ps['< contents >']
                     if ep ~= nil then
                         return ep
                     end
+                else
+                    Debug.pause( "?" )
                 end
                 break
             end
         end
     else
-        return props
+        return props -- note: this also has a <contents> member, but can be used as-is unless making a table copy..
     end
 end
 
@@ -122,6 +127,7 @@ Export.settingsDef = {
     ['LR_embeddedMetadataOption'] = { section="Metadata", title="Include", required='yes', legalValues={ ['copyrightOnly']=true, ['copyrightAndContactOnly']=true, ['allExceptCameraInfo']=true, ['all']=true } },
     ['LR_export_colorSpace'] = { section="File Settings", title="Color Space", required='yes', legalValues={ sRGB='sRGB', AdobeRGB='AdobeRGB', ProPhotoRGB='ProPhotoRGB', _=true } }, -- different format for emphasis: custom colorspaces may also be valid.
     ['LR_size_resizeType'] = { section="Image Sizing", title="Method", required='depends', legalValues={ ['wh']=true, ['longEdge']=true, ['shortEdge']=true, ['megapixels']=true, ['dimensions']=true } },
+    ['LR_size_units'] = { section="Image Sizing", title="Units", required='depends', legalValues={ ['pixels']=true,   ['in']=true, ['cm']=true } },
     ['LR_useWatermark'] = { section="Watermarking", title="Use Watermark", required='yes', dataType='boolean', default=false },
     ['LR_watermarking_id'] = { section="Watermarking", title="Watermark ID", required='depends', dataType='string' },
     ['LR_export_bitDepth'] = { section="", title="File Settings", required='depends', dataType='number', constraints={ min=8, max=16 } },
@@ -175,6 +181,7 @@ Export.settingsDef = {
 
 local reqFuncs = { -- determine whether conditions are such that setting is required (only called if it's not been supplied, i.e. is nil).
     ['LR_size_resizeType'] = function( settings ) return settings.LR_size_doConstrain end,
+    ['LR_size_units'] = function( settings ) return settings.LR_size_doConstrain and settings.LR_size_resizeType ~= 'megapixels' end,
     ['LR_jpeg_quality'] = function( settings ) return settings.LR_format == 'JPEG' end,
     ['LR_tiff_preserveTransparency'] = function( settings ) return settings.LR_format == 'TIFF' end,
     ['LR_tiff_compressionMethod'] = function( settings ) return settings.LR_format == 'TIFF' end,
@@ -1005,12 +1012,17 @@ function Export:_assurePresetCache( props, photo )
                     break
                 end
                 if not s.id then
+                    --[[ until 4/Jul/2014 16:26:
                     if name ~= 'Filename' then
                         app:logv( "no id for filename preset '^1'", name ) -- not sure why this is happening now, but can't use it without an ID.
-                        break
+                        -- break - 
+                        
                     else
                         s.id = '__filename__' -- pseudo ID
                     end
+                    --]]
+                    app:logv( "no id for filename preset '^1' - using path instead as ID.", name ) -- not sure why this is happening now, but can't use it without an ID.
+                    s.id = de -- id can be path if no true ID.
                 end
                 local tokens = {}
                 for i, v in ipairs( s.deflated[1] ) do
@@ -1053,7 +1065,7 @@ function Export:_assurePresetCache( props, photo )
         for name, id in pairs( LrApplication.filenamePresets() ) do
             repeat
                 if not id then
-                    app:logv( "no id for filename preset '^1' - skipped", name )
+                    app:logW( "no id for filename preset '^1' - skipped", name ) -- I don't think this should ever happen(?)
                     break
                 end
                 if not self.filenamePresetCache[name] then
@@ -1061,13 +1073,24 @@ function Export:_assurePresetCache( props, photo )
                     break
                 end
                 local sts, filename = LrTasks.pcall( photo.getNameViaPreset, photo, id, cust, seq )
-                if sts then
-                    app:logv( "yep: ^1, ^2", name, id )
+                if sts then -- note: filename = "nil" if say 'Headline Only' and headline field is nil.
+                    app:logV( "Filename preset verified: ^1, ^2 (sample filename: ^3)", name, id, filename )
                     self.filenamePresetCache[name].verified = true
-                    self.filenamePresetCache[name].id = id -- use true ID from filename-preset, rather than internal uuid.
+                    if self.filenamePresetCache[name].id ~= id then
+                        app:logV( "Internal uuid or path (^1) being replaced by filename-preset ID: ^2", self.filenamePresetCache[name].id, id )
+                        self.filenamePresetCache[name].id = id -- use true ID from filename-preset, rather than internal uuid.
+                    end
                 else
-                    app:logv( "nope (^4): ^1, ^2 - tokens: ^3", name, id, self.filenamePresetCache[name].tokenString, filename )
-                    self.filenamePresetCache[name].verified = false
+                    -- this extra try with cached ID added 14/Nov/2014 - fixes problem with erroneous "unable to verify filename preset" errors.
+                    local uuid = self.filenamePresetCache[name].id
+                    local sts, filename = LrTasks.pcall( photo.getNameViaPreset, photo, uuid, cust, seq )
+                    if sts then
+                        self.filenamePresetCache[name].verified = true
+                        app:logV( "Filename preset verified, not with filename-preset ID (^1), but internal uuid (^2) - good 'nuff.. (sample filename: ^3)", id, uuid, filename )
+                    else
+                        app:logV( "*** Unable to verify filename preset (^4): ^1, ^2 - tokens: ^3", name, id, self.filenamePresetCache[name].tokenString, filename )
+                        self.filenamePresetCache[name].verified = false
+                    end
                 end
                 --if filename == "custom-text" then - custom-name only is actually a perfectly valid naming preset in some cases.
                 --    app:logv( '    - "^1" preset may be not worth having, in any case consider entering something more interesting for custom text.', name )
@@ -1102,7 +1125,10 @@ function Export:getDestBaseName( props, photo, cache )
         if not self.filenamePreset then
             self.filenamePreset = self:_getVerifiedPreset( props.LR_tokens )
             if not self.filenamePreset then
-                app:error( "You must restart Lightroom in order to be able to use selected filenaming preset" )
+                --Debug.logn( "tokens", props.LR_tokens )
+                --Debug.lognpp( "lookup", self.filenamePresetLookup ) -- ###1
+                --Debug.pause( "View debug log file - tokens and lookup" )
+                app:error( "You must restart Lightroom in order to use selected filenaming preset - tokens: ^1", props.LR_tokens )
             end
         else
             --Debug.pause( self.filenamePreset.name )
@@ -1123,6 +1149,7 @@ function Export:getDestBaseName( props, photo, cache )
             if s then
                 if basename then
                     if #basename > 0 then
+                        --Debug.pauseIf( basename == "nil" )
                         --Debug.pause( self.filenamePreset['name'], self.filenamePreset.tokenString )
                         app:logv( "File base-name based on preset (^2) : ^1 (tokens in preset=^3)", basename, self.filenamePreset.name, self.filenamePreset.tokenString )
                     else
@@ -1198,15 +1225,14 @@ function Export:processRenderedPhotosMethod()
 
     dbg( "Export class: ", str:to( self ) )
 
-    local service = Service:new{
+    self.srvc = Service:new{
          name = app:getAppName() .. ' export',
          object = self,
          main = self.service,
          finale = self.finale,
     }
     
-    self.srvc = service
-    app:call( service )
+    app:call( self.srvc )
 
 end
 
@@ -1223,15 +1249,15 @@ end
 --  @param      status      same as service.status
 --  @param      message     same as service.message
 --
-function Export:finale( service, status, message )
+function Export:finale( call, status, message )
     -- assert( self == Export.exports[self.exportContext], "whoami?" )
     -- app:logInfo( str:format( "^1 finale, ^2 rendered.", name, str:plural( self.nPhotosRendered, "photo" ) ) )
     if status then
-        app:log( "^1 finished.", service.name ) -- log added 9/Dec/2011. ###2 - not sure if this is kosher here.
-        intercom:broadcast{ exportState = 'finished', exportMessage = service.name .. " completed successfully."  } -- default lifetime of 10 seconds should be fine.
+        app:log( "^1 finished.", call.name ) -- log added 9/Dec/2011. ###2 - not sure if this is kosher here.
+        intercom:broadcast{ exportState = 'finished', exportMessage = call.name .. " completed successfully."  } -- default lifetime of 10 seconds should be fine.
     else
         --app:logErr( "^1 terminated due to error - ^2", service.name, str:to( message ) ) - results in a duplicate, since service class itself logs a service error.
-        intercom:broadcast{ exportState = 'finished', exportMessage = service.name .. " terminated due to error."  } -- default lifetime of 10 seconds should be fine.
+        intercom:broadcast{ exportState = 'finished', exportMessage = call.name .. " terminated due to error."  } -- default lifetime of 10 seconds should be fine.
     end    
     Export.exports[self.exportContext] = nil -- *** kill self reference, garbage collection runs later... this is not the cause of ftp reliability problems.
 end
@@ -1256,13 +1282,13 @@ end
 --
 --  @usage This method helps export manager track managed exports (all exports based on this class are managed).
 --
-function Export:initiate( service )
+function Export:initiate( call )
     -- fprops:setPropertyForPlugin( _PLUGIN, "exportState", 'running' ) -- pre 2012.
     -- fprops:setPropertyForPlugin( _PLUGIN, "exportMessage", service.name .. ' in progress' ) -- ditto.
     fprops:setPropertyForPlugin( _PLUGIN, "exportState", nil ) -- kill this property for future.
     fprops:setPropertyForPlugin( _PLUGIN, "exportMessage", nil ) -- kill this property for future.
     Debug.logn( "export in progress" )
-    intercom:broadcast{ exportState = 'running', exportMessage = service.name .. " in progress"  } -- default lifetime of 10 seconds should be fine.
+    intercom:broadcast{ exportState = 'running', exportMessage = call.name .. " in progress"  } -- default lifetime of 10 seconds should be fine.
 end
 
 
@@ -1317,7 +1343,7 @@ end
 --  @usage  Just inits some stuff, logs some stuff, configures progress scope, and loops through renditions, calling rendered processing functions (photo or failure), depending on status.
 --      <br>*** also checks that exported photo exists on disk at specified location, if successful. If you do NOT want this behavior, then override this function.
 
-function Export:service( service )
+function Export:service( call )
 
     if app:isAdvDbgEna() then
         app:logV( "Export Params:")
@@ -1394,6 +1420,7 @@ end
 --  @usage        Call from derived class to ensure dialog is initialized according to base class.
 --
 function Export:startDialogMethod( props )
+    dia:clearPromptOnce()
 end
 
 
@@ -1448,7 +1475,7 @@ end
 
 --- Process one rendered photo.
 --
-function Export:processRenderedPhoto( rendition, photoPath )
+function Export:processRenderedPhoto( rendition, exportPath )
     self.nPhotosRendered = self.nPhotosRendered + 1
 end
 

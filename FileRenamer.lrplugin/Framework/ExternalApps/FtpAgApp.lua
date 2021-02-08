@@ -486,7 +486,7 @@ end
 
 
 
-function FtpAgApp:_assureJobDir( srvcName, jobNum )
+function FtpAgApp:_assureJobDir( srvcName, jobNum, justGet )
     local jobNumPadded = string.format( "%03u", jobNum )
     
     local dir
@@ -495,6 +495,7 @@ function FtpAgApp:_assureJobDir( srvcName, jobNum )
     --app:logV( "Service directory: ^1", path )
     dir = LrPathUtils.child( dir, "jobs" )
     dir = LrPathUtils.child( dir, str:fmtx( "^1 job", jobNumPadded ) )
+    if justGet then return dir end
     local s, m = fso:assureDir( dir )
     if s then
         return dir
@@ -553,6 +554,14 @@ function FtpAgApp:uploadFile( srvcName, file, jobNum, taskNum )
         return false, m
     end
 
+end
+
+
+
+--- Determine what job dir is or would be without actually creating it, yet.
+--
+function FtpAgApp:getJobDir( srvcName, jobNum )
+    return self:_assureJobDir( srvcName, jobNum, true ) -- just get
 end
 
 

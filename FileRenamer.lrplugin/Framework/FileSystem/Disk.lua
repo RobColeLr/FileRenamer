@@ -2,6 +2,31 @@
         Disk.lua
         
         Class with methods for dealing with disk files and folders.
+ 
+        Can be used with LrPathUtils.getStandardFilePath:
+        -------------------------------------------------     
+            adobeAppData 
+            home 
+            lightroomCommonFiles 
+            desktop 
+            documents 
+            pictures 
+            music 
+            public_desktop 
+            public_documents 
+            public_music 
+            public_pictures 
+            public_videos 
+            appData 
+            cache 
+            appPrefs 
+            desktop 
+            temp 
+            allUserAppData 
+            allUserAppDataACR 
+            applications 
+            applicationsX86 
+            users         
 --]]
 
 local Disk, dbg, dbgf = Object:newClass{ className = 'Disk' }
@@ -129,23 +154,35 @@ end
 --   F I L E   O P E R A T I O N S . . .
 
 
---- Move or rename a file.
+--- Move a folder or rename a file.
 --      
 --  <p>One motivation: to handle case of silent failure of Lr version.</p>
 --                      
---  @usage              Lr doc says its just for files, but experience dictates it works on folders as well.
+--  @usage              Thin wrapper around Lr move func, whose doc says its just for files, but experience dictates it works on folders as well.
 --  @usage              *** SOURCE EXISTENCE NOT PRE-CHECKED, NOR IS TARGET PRE-EXISTENCE - SO CHECK BEFORE CALLING IF DESIRED.
 --
 --  @return             boolean: true iff successfully moved.
 --  @return             error message if unable to move.
 --                      
 function Disk:moveFolderOrFile( oldPath, newPath )
-    local pcallStatus, sts, reason = LrTasks.pcall( LrFileUtils.move, oldPath, newPath )
+    local pcallStatus, sts, reason
+    local sameVol = LrFileUtils.pathsAreOnSameVolume( oldPath, newPath ) -- new handling for cross-volume moves (using copy/delete instead) implemented 18/Oct/2014 21:43.
+        -- Seems to be working, but if problem: set sameVol unconditionally to true instead, and it will behave as before.
+    if sameVol then
+        pcallStatus, sts, reason = LrTasks.pcall( LrFileUtils.move, oldPath, newPath ) -- note: if paths on different volume this does a recursive move of each dir-ent, and so is not interruptible or reversible..
+    else
+        pcallStatus, sts, reason = LrTasks.pcall( LrFileUtils.copy, oldPath, newPath ) -- @18/Oct/2014 21:43, seems to be working just fine for copying entire folder tree.
+            -- an advantage to using copy-tree would be ability to cancel operation in mid-copy, before the deletion, and then optionally remove copied files.
+    end
     if pcallStatus then
         if sts then
             local exists = LrFileUtils.exists( newPath )
             if exists then
-                return true
+                if sameVol then -- moved
+                    return true
+                else -- copied
+                    return self:deleteFolderOrFile( oldPath ) -- compatible return values.
+                end
             else
                 return false, str:fmtx( "UNABLE TO MOVE ^1 TO ^2 - NOT SURE WHY.", oldPath, newPath )
             end
@@ -156,6 +193,38 @@ function Disk:moveFolderOrFile( oldPath, newPath )
         end
     else
         return false, str:fmtx( "UNABLE TO MOVE ^1 TO ^2 - MORE: ^3", oldPath, newPath, str:to( sts ) )
+    end
+end
+
+
+
+--- Copy a folder (tree) or a file. ###1 not yet tested.
+--      
+--  <p>One motivation: to handle case of silent failure of Lr version.</p>
+--                      
+--  @usage              Thin wrapper around Lr copy func, whose doc says its just for files, but experience dictates it works on folders as well.
+--  @usage              *** SOURCE EXISTENCE NOT PRE-CHECKED, NOR IS TARGET PRE-EXISTENCE - SO CHECK BEFORE CALLING IF DESIRED.
+--
+--  @return             boolean: true iff successfully copied.
+--  @return             error message if unable to copy.
+--                      
+function Disk:copyFolderOrFile( oldPath, newPath )
+    local pcallStatus, sts, reason = LrTasks.pcall( LrFileUtils.copy, oldPath, newPath )
+    if pcallStatus then
+        if sts then
+            local exists = LrFileUtils.exists( newPath )
+            if exists then
+                return true
+            else
+                return false, str:fmtx( "UNABLE TO COPY ^1 TO ^2 - NOT SURE WHY.", oldPath, newPath )
+            end
+        elseif str:is( reason ) then
+            return false, str:fmtx( "UNABLE TO COPY ^1 TO ^2 - ^3.", oldPath, newPath, reason )
+        else
+            return false, str:fmtx( "UNABLE TO COPY ^1 TO ^2 - NOT SURE WHY(2).", oldPath, newPath )
+        end
+    else
+        return false, str:fmtx( "UNABLE TO COPY ^1 TO ^2 - MORE: ^3", oldPath, newPath, str:to( sts ) )
     end
 end
 
@@ -267,7 +336,7 @@ function Disk:deleteFileConfirm( path )
             if not self:existsAsFile( path ) then
                 return
             else
-                Debug.pause( "not deleted after try #^1", count )
+                Debug.pause( "not deleted after try:", count )
             end
             LrFileUtils.delete( path )
             count = count + 1
@@ -1001,22 +1070,22 @@ end
 --  @return     comment - string: explanation for failure.    
 --
 function Disk:readFile( filePath )
-    -- [ [ *** save for posterity ###1 may need to resurrect for reliability
-    if true then -- ###1 app:isAdvDbgEna() and app:getUserName() == "_RobCole_" then -- trial basis during my debugging.
-        if not LrFileUtils.isReadable( filePath ) then
-            if not LrTasks.canYield() then
-                return nil, "file is not readable: "..( filePath or "nil" )
-            end
-            local cnt = 0 -- give it a half second (to avoid this potential delay, you can assure readability before calling).
-            repeat
-                cnt = cnt + 1
-                if cnt >= 10 then
-                    return nil, "File not readable: "..(filePath or "nil")
-                end
-                LrTasks.sleep( .05 )
-            until LrFileUtils.isReadable( filePath )
+    if not LrFileUtils.isReadable( filePath ) then
+        if not LrTasks.canYield() then
+            return nil, "file is not readable: "..( filePath or "nil" )
         end
-        -- fall-through => file is readable, according to Lightroom..
+        local cnt = 0 -- give it a half second (to avoid this potential delay, you can assure readability before calling).
+        repeat
+            cnt = cnt + 1
+            if cnt >= 10 then
+                return nil, "File not readable: "..(filePath or "nil")
+            end
+            LrTasks.sleep( .05 )
+        until LrFileUtils.isReadable( filePath )
+    end
+    -- fall-through => file is readable, according to Lightroom..
+    --[[ the original way - cons: does not support non-ascii chars in path, *and* uses excessive memory (and is slow) for very large (e.g. video) files.
+                     - potential pros: more reliable - jury still out..
         local msg = nil
         local contents = nil
         local ok, fileOrMsg = pcall( io.open, filePath, "rb" )
@@ -1033,12 +1102,9 @@ function Disk:readFile( filePath )
             msg = str:format( "Unable to open file for reading, path: ^1, additional info: ^2", filePath, str:to( fileOrMsg ) )
         end
         return contents, msg
-    end
-    -- ] ]
-    -- local status, contents = LrTasks.pcall( LrFileUtils.readFile, filePath )
-    local status, contents = pcall( LrFileUtils.readFile, filePath ) -- required for non-ascii path, hopefully doesn't yield (so this function works whether task or not),
-        -- for the time being, if there is ever a yield failure, I want to know about it, since I'm assuming/hoping/advertising this will work in task or out.
-        -- also, dofile and loadfile are using lr-file-utils-read-file in a non-task environment.
+    --]]
+    -- the new way (note: I've flipped back and forth a couple times in the hopes of better reliability - dunno whether checking readability is a key, or read method - ugh. ###1
+    local status, contents = pcall( LrFileUtils.readFile, filePath ) -- note: lr-file-utils--read-file does not yield.
     if status then
         if contents ~= nil then
             return contents
@@ -1349,6 +1415,71 @@ function Disk:isReadOnly( path )
         end
     end
     
+end
+
+
+
+--- Determine if mac file is already executable (e.g. exiftool).
+--
+--  @param path absolute
+--  @param byWho 'a', 'u', 'g', or 'o' (or 'all', 'user', 'group', or 'other' ).
+--
+function Disk:isMacFileExecutable( path, byWho )
+    if WIN_ENV then
+        app:callingError( "only applies on Mac" )
+    end
+    app:callingAssert( str:is( byWho ), "must specify by who" )
+    -- there may be a better way, but this works:
+    local s, m, c = app:executeCommand( "ls", "-l", { path }, nil, "del" )
+    --local s, m, c = true, nil, "drw-rw-rw- " .. path -- for testing only
+    if s then
+        if c then
+            local p1, p2 = c:find( LrPathUtils.leafName( path ), 1, true ) -- make sure response represents a found file.
+            if p1 and p1 > 10 then -- found
+                byWho = byWho:sub( 1, 1 )
+                --  u  g  o
+                -- drwxrwxrwx
+                -- 1234567890
+                local charMap = {
+                    u = 4,
+                    g = 7,
+                    o = 10
+                }
+                local function bySomebody( who )
+                    local char = str:getChar( c, charMap[who] )
+                    return char == 'x'
+                end
+                if byWho == 'a' then
+                    return bySombody( 'u' ) and bySomebody( 'g' ) and bySomebody( 'o' )
+                else
+                    return bySomebody( byWho )
+                end
+            else
+                return nil, "invalid response to ls command (for file attributes): " .. str:to( c )
+            end
+        else
+            error( "program failure - no command content returned" )
+        end
+    else
+        return nil, m
+    end
+end
+
+
+
+--- Make mac file executable (e.g. exiftool).
+--
+--  @param path absolute
+--  @param byWho 'a', 'u', 'g', or 'o' (or 'all', 'user', 'group', or 'other' ).
+--
+function Disk:makeMacFileExecutable( path, byWho )
+    app:callingAssert( str:is( byWho ), "must specify by who" ) -- assure string
+    byWho = byWho:sub( 1, 1 ) -- reduce to one pertinent character.
+    local s, m = app:executeCommand( "chmod", str:fmtx( "^1+x", byWho ), { path } )
+    if s and app:isDebugEnabled() then
+        app:assert( ( fso:isMacFileExecutable( path, byWho ) ), "^1 is not executable by ^1 - hmm.", path, byWho )
+    end
+    return s, m
 end
 
 
@@ -1722,21 +1853,6 @@ function Disk:getAppDataDir( winSubdir )
     end
 end
 
-
-
---[[ Get array of directories.
---
-function Disk:getDirectories( dir )
-    local dirs = {}
-    for ent in LrFileUtils.directoryEntries( dir ) do
-        if LrFileUtils.exists( ent ) == 'directory' then
-            dirs[#dirs + 1] = ent
-        end
-    end
-    return dirs
-end
-Disk.getDirs = Disk.getDirectories -- function Disk:getDirs( ... )
---]]
 
 
 return Disk

@@ -42,14 +42,14 @@ function ExternalApp:new( t )
     else
         if str:is( o.prefName, "external_app--new - pref-name" ) then -- have a different name for pref that may be found as global? ###3
             o.exe = app:getPref( o.prefName )
-            if not str:is( o.exe, "external_app--new - exe" ) then
-                o.exe = app:getGlobalPref( o.prefName )
+            if not str:is( o.exe, "external_app--new - exe" ) then -- ### I'm not real crazy about this either/or (local/global) stuff, but it's here for historical reasons.
+                o.exe = app:getGlobalPref( o.prefName ) -- @27/Sep/2014 18:09 - recommend practice: use local not global pref.
             end
         end
     end
     o.name = o.name or "External application"
     -- check for proper value, and do best to rectify, and/or notify:
-    o:processExeChange( o.exe ) -- hmm - if this method unconditionally sets local pref, it would stomp on any apps which is wired to global one - are there any? ###2.
+    o:processExeChange( o.exe ) -- hmm - if this method unconditionally sets local pref, it would stomp on any apps which is wired to global one - are there any still? (there were a long time ago) ###2.
     return o
 end
 
@@ -59,7 +59,7 @@ end
 --
 --  @param  value   from pref or edited property, else nil or blank.
 --
---  @usage          global or local pref is not nor cleared by this method - that must be done externally to persist.
+--  @usage          global or local pref is not nor cleared by this method - that must be done externally to persist, depending on whether local (recommended) or global (ugh).
 --
 function ExternalApp:processExeChange( value )
     self.exe = value -- may be undone below.

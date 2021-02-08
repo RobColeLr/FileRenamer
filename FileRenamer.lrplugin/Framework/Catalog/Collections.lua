@@ -40,7 +40,8 @@ end
 function Collections:getCollPath( coll, sep )
     sep = sep or '/'
     if coll.getParent then
-        local c = { cat:getSourceName( coll ) }
+        local nm, _ = cat:getSourceName( coll ) -- bug fixed 22/Aug/2014, induced whenever ID started being returned along with name.
+        local c = { nm }
         local p = coll:getParent()
         while p ~= nil do
             c[#c + 1] = cat:getSourceName( p )
@@ -79,7 +80,8 @@ function Collections:getFullCollPath( coll, sep )
         return nil
     end
     if coll.getParent then
-        local c = { cat:getSourceName( coll ) }
+        local nm, _ = cat:getSourceName( coll ) -- bug fixed 22/Aug/2014, induced whenever ID started being returned along with name.
+        local c = { nm }
         local p = getParent( coll ) -- coll:getParent()
         while p ~= nil do
             c[#c + 1] = cat:getSourceName( p )

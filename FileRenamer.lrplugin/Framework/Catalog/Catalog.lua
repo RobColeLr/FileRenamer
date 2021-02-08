@@ -95,7 +95,7 @@ end
 
 --- Get support type for all or specified extension.
 --
---  @param ext extension or nil.
+--  @param ext *upper-case* extension or nil.
 --
 --  @usage make a copy of the returned table if plugin is to change support type strings to tables, or add-on...
 --
@@ -112,6 +112,82 @@ end
 
 
 
+--- Get extensions for specified type.
+--
+--  @param typ : 'raw', 'rbg', or 'video'.
+--
+--  @return array of extensions.
+--
+function Catalog:getSupportedExtensions( typ )
+    local memberName = typ.."_ext_arr"
+    if self[memberName] == nil then
+        self[memberName] = {}
+        local rslt = self[memberName]
+        for ext, t in pairs( extSupport ) do
+            if t == typ then
+                rslt[#rslt + 1] = ext
+            end
+        end
+        return rslt
+    else
+        return self[memberName]
+    end
+end
+
+
+
+--- Get raw photo given base path (absolute path without extension).
+--
+--  @usage if you want to pre-initialize raw-ext-pri, you can..
+--
+function Catalog:getRawPhoto( basePath )
+    self.rawExtArr = self.rawExtArr or self:getSupportedExtensions( 'raw' )
+    self.rawExtPri = self.rawExtPri or { NEF=true, CR2=true, DNG=true } -- a little personal bias - sorry..
+    for ext, t in pairs( self.rawExtPri ) do
+        local p = catalog:findPhotoByPath( LrPathUtils.addExtension( basePath, ext ) )
+        if p then
+            return p
+        end
+    end        
+    for i, ext in ipairs( self.rawExtArr ) do
+        local p = catalog:findPhotoByPath( LrPathUtils.addExtension( basePath, ext ) )
+        if p then
+            self.rawExtPri[ext] = true -- for next time.
+            return p
+        end
+    end        
+end
+
+
+
+--- Get raw file given folder and base filename.
+--
+--  @usage if you want to pre-initialize raw-ext-pri, you can..
+--
+function Catalog:getRawFile( folderPath, baseFilename )
+    self.rawExtArr = self.rawExtArr or self:getSupportedExtensions( 'raw' )
+    self.rawExtPri = self.rawExtPri or { NEF=true, CR2=true, DNG=true } -- a little personal bias - sorry..
+    for ext, t in pairs( self.rawExtPri ) do
+        local path = LrPathUtils.child( folderPath, LrPathUtils.addExtension( baseFilename, ext ) )
+        local f, d = fso:existsAs( path, 'file' )
+        if f then
+            return path
+        -- else ignore
+        end
+    end        
+    for i, ext in ipairs( self.rawExtArr ) do
+        local path = LrPathUtils.child( folderPath, LrPathUtils.addExtension( baseFilename, ext ) )
+        local f, d = fso:existsAs( path, 'file' )
+        if f then
+            self.rawExtPri[ext] = true -- for next time.
+            return path
+        -- else ignore
+        end
+    end        
+end
+    
+    
+    
 --- Get lr folder for photo, if possible.
 --
 --  @param photo (lr-photo, required) photo whose folder is desired.
@@ -249,7 +325,7 @@ end
 function Catalog:getSourceName( source )
     app:callingAssert( source~=nil, "source is nil" )
     if source.getName ~= nil then
-        return source:getName() -- not special
+        return source:getName(), source.localIdentifier or source:getPath() -- not special: collection or folder.
     end
     if self.specialSourceNames == nil then
         self.specialSourceNames = {
@@ -523,7 +599,7 @@ function Catalog:_update( catFunc, tmo, name, func, ... )
             sts = true
         end
     end
-    local maxPhases = 10000000 -- ten million max, for sanity.
+    local maxPhases = 10000000 -- ten million max, for sanity (used in "emulation" loop as well as the real deal..).
     repeat -- do all phases.
         local s, other
         local lrVerMajor, lrVerMinor = app:lrVersion()
@@ -534,6 +610,7 @@ function Catalog:_update( catFunc, tmo, name, func, ... )
             else
                 s, other = LrTasks.pcall( catFunc, catalog, _func, tmoTbl ) -- ditto.
             end
+            LrTasks.yield() -- Lr5.6 needed this, at least initially, for example, Folder Collections plugin was bringing down the house.. once init is successful, this yield is no longer necessary, but no doubt best to leave it in..
         else -- Lr <= 5.2
             -- ###3 Lr4 timeout handling is buggy - catastrophically in my case, since phasing progression depends on reliable/consistent error handling,
             -- otherwise it gets stuck in a loop continuing to re-call cat access method, when it should be aborting, since internal error is not being trapped...
@@ -798,6 +875,32 @@ end
 
 
 
+--- Get active sources - same as Lr's version except won't bomb if called during startup (Lr's method throws error if called too soon).
+--  @usage can be called at any time, but only has true value when called during startup.
+--  @param call (Call, optional but recommended) If call object, then returns when call is quit, otherwise only returns prematurely if global shutdown flag is set.
+--  @return activeSources (array) generally not empty, and only nil if premature abortion (quit or shutdown).
+function Catalog:getActiveSources( call )
+    for try = 1, 30 do
+        local sts, activeSources = LrTasks.pcall( catalog.getActiveSources, catalog ) -- assertion failed error when called upon Lr startup, hmm...
+        if sts then
+            if tab:isArray( activeSources ) then -- check to see there is at least one active source, before returning merrily.
+                return activeSources
+            else
+                app:logV( activeSources and "*** active sources is empty" or "*** active sources is nil" )
+                Debug.pause( activeSources and "active sources is empty" or "active sources is nil" ) -- never seen this happen in Windows, but one user reported seeing it on Mac (during startup).
+                return activeSources or {} -- make sure to not return nil value to calling context - it *should* handle empty array OK.
+            end
+        else
+            dbgf( "Unable to obtain active sources upon attempt #^1 - ^2", try, activeSources )
+            LrTasks.sleep( 1 )
+            if call and call:isQuit() or shutdown then return end
+        end
+    end
+    error( "Unable to obtain active sources." ) -- never happens, hopefully.
+end
+
+
+
 -- Unwrapped internal function for assuring sources (folders) are selected.
 -- returns most-selected-photo, new photos array, which is guaranteed to include most-sel-photo. or false, msg.
 -- goal is to assure sources (folders really) are selected if need be, in order to assure specified photos can be selected.
@@ -859,6 +962,125 @@ function Catalog:_assureSources( photo, photos, metaCache )
 end
 
 
+
+--- Try to select photos - return status of attempt (no error message).
+--
+--  @usage 150msec max if photos not being selected.
+--
+--  @param photos (array of LrPhoto, required) photos to be selected.
+--  @param target (LrPhoto, optional) photo to be most-selected. If passed, must be in photos array; if not passed first photo in array will be most-selected.
+--
+--  @return status (boolean) true iff selection confirmed with certainty - no message accompaniment, regardless of status.
+--
+function Catalog:tryToSelectPhotos( photos, target )
+    local valid
+    local photoSet = tab:createSet( photos )
+    local function selValid()
+        local targetPhotos = catalog:getTargetPhotos()
+        if #targetPhotos ~= #photos then return false end
+        for i, p in ipairs( targetPhotos ) do
+            if not photoSet[p] then return false end
+        end
+        return true
+    end
+    target = target or photos[1]
+    -- Try to select specified photos - minimum time: 20msec, maximum time: 150msec.
+    local function doSelect()
+        for i = 1, 3 do
+            catalog:setSelectedPhotos( target, photos )
+            LrTasks.sleep( .02 )
+            valid = selValid()
+            if valid then return true end
+            LrTasks.sleep( .03 ) -- give the new selection a fighting chance of being/becoming valid.
+        end
+    end
+    -- try without changing anything (maybe Lr is just having a slow hair day..).
+    doSelect()
+    if valid then return true end -- if happens without changing anything, keep quiet about it.
+end
+
+
+
+--- Select specified photos - no excuses.
+--
+--  @usage will try for at least 600msec, if not selecting: clears view filter, selects parent folders, and as last resort: puts specified photos in their own collection.
+--  @usage if disallowing source change, max try time will be 300 msec. If you need to disallow changing view filter too, call 'tryToSelectPhotos' method instead.
+--
+--  @param photos (array of LrPhoto, required) photos to be selected.
+--  @param target (LrPhoto, optional) photo to be most-selected. If passed, must be in photos array; if not passed first photo in array will be most-selected.
+--  @param disallowSourceChange (boolean, default=false) pass true if initial attempt is all that is warranted (i.e. do not resort to changing folders or collection..).
+--
+--  @return status true iff photos selected.
+--  @return qual message may accompany true or false status value.
+--
+function Catalog:assureSelectedPhotos( photos, target, disallowSourceChange )
+    target = target or photos[1]
+    local valid
+    -- try without changing anything (maybe Lr is just having a slow hair day..).
+    valid = self:tryToSelectPhotos( photos, target )
+    if valid then
+        return true -- if happens without changing anything, keep quiet about it.
+    end
+    -- fall-through => need a bigger hammer (setting and waiting not enough) - try just turning filter off.
+    self:clearViewFilter()
+    valid = self:tryToSelectPhotos( photos, target )
+    if valid then
+        return true, "Had to clear view filter to select specified photos."
+    end
+    if disallowSourceChange then
+        return false, "Unable to select specified photos, or at least not without altering selected sources."
+    end
+    -- fall-through => need a bigger hammer (clearing view filter not enough) - try selecting the folders they're in.
+    local folders = {} -- lr-folders: found.
+    local folderSet = {} -- folder paths tried.
+    for i, p in ipairs( photos ) do
+        local folder = LrPathUtils.parent( p:getRawMetadata( 'path' ) )
+        if not folderSet[folder] then
+            folderSet[folder] = true -- whether found or not..
+            local lrFldr = catalog:getFolderByPath( folder ) -- will not work correctly if network or lr-mobile folder. ###2
+            if lrFldr then
+                folders[#folders + 1] = lrFldr
+            else
+                logWarn( "Unable to get photo folder: ^1", folder )
+            end
+        end
+    end
+    if #folders > 0 then -- got some
+        catalog:setActiveSources( folders )
+        valid = self:tryToSelectPhotos( photos, target )
+        if valid then
+            return true, "Had to select parent folders to select specified photos."
+        end
+    -- else warnings already logged.
+    end
+    -- fall-through => need a bigger hammer (setting folder sources not enough) - try putting photos in their own collection.
+    local sts, selColl = LrTasks.pcall( Catalog.assurePluginCollection, cat, "Selected Photos" )
+    if sts then
+        local status = catalog:withWriteAccessDo( "Set 'Selected Photos' Collection Items", function() -- ###1
+            selColl:removeAllPhotos()
+            selColl:addPhotos( photos )
+        end, { timeout=20 } )
+        if status == "executed" then
+            --logDbg( "Set script selected-photos collection items" )
+        else
+            return nil, "Unable to set script collection items"
+        end
+        catalog:setActiveSources{ selColl }
+        valid = self:tryToSelectPhotos( photos, target )
+        if valid then
+            return true, "Had to put photos in their own collection to select them."
+        else
+            return nil, "Unable to set selected photos in collection."
+        end
+    else
+        return nil, selColl or "no reason"
+    end
+    error( "how here?" )
+end
+
+
+
+-- ###1 deprecate this function as soon as the above function proves itself.
 
 --- Set selected photos, and verify selection, with option to select folders if necessary to assure photos will be selected, even if not in filmstrip.
 --
@@ -970,6 +1192,7 @@ Catalog.setSelectedPhotos = Catalog.selectPhotos -- synonym. function Catalog:se
 
 --- Save metadata for one photo.
 --
+--  @usage              *** consider using save-xmp-metdata method instead if Lr5+ - it does not have the same side-effect of photo being selected.
 --  @param              photo - single photo object to save metadata for.
 --  @param              photoPath - photo path (optional).
 --  @param              targ - path to file containing xmp for save validation (optional).
@@ -993,7 +1216,6 @@ function Catalog:savePhotoMetadata( photo, photoPath, targ, call, noVal, oldWay 
 
     local mode = app:getPref( 'saveMetadataMode' ) -- Note: consider separating mode for batch vs. onezie (or just ignoring mode if Lr5/onezie), since auto-mode for onezie should work fine on Mac in Lr5.
     if mode == 'manual' then
-        return self:saveMetadata( { photo }, true, false, true, call ) -- manual mode is same for single photo as multi-photo, validation is up to user...
     end
     -- otherwise, auto is default mode - proceed...
 
@@ -1041,7 +1263,7 @@ function Catalog:savePhotoMetadata( photo, photoPath, targ, call, noVal, oldWay 
 
     local done = false -- cancel flag
     
-    -- Side effect: selection of single photo to be saved.
+    -- Side effect: selection of single photo to be saved. @6/Dec/2014 21:34, this side effect is not always acceptable, so save-xmp-metadata invented to for such contexts.
     -- local s, m = cat:selectOnePhoto( photo ) - commented out 13/Sep/2011 16:47
     local s = cat:assurePhotoIsSelected( photo, photoPath ) -- added 13/Sep/2011 16:47
     -- dunno if this is necessarily an Lr5 bug, so.. ###2
@@ -1049,7 +1271,6 @@ function Catalog:savePhotoMetadata( photo, photoPath, targ, call, noVal, oldWay 
     -- Note: this seems true even if pausing for complete settling before-hand.
     -- reminder: .1 seconds is not enough.
     -- Note: I'm not having this problem all the time, but certainly I am in case of newly imported jpg... (as per DxOh import feature).
-    
     if s then
         app:logVerbose( "Photo selected for metadata save: ^1", photoPath )
     else
@@ -1179,6 +1400,91 @@ end
 
 
 
+--- Save one or more photo's xmp metadata, if Lr5+.
+--
+--  @usage used to have potential for trouble on Mac in Lr5.2RC. @6/Dec/2014 19:30 in Windows it's working perfectly - not sure what to say, except test well..
+--  @usage sloooow if multiple photos, unleess/until Adobe approves..
+--
+--  @param photoOrPhotos lr-photo or array of them.
+--  @param otherStuff table of options, defined so far:
+--      <br>    noVal - omit the validation that metadata saving has completed successfully.
+--      <br>    tmo - if not 'noVal' the validation timeout - defaults to 30 + .1 second per photo.
+--      <br>    cache - metadata cache.
+--
+--  @return status true => success.
+--  @return err-msg if status false, the reason, else if not no-val, the target path (1-photo), or parallel array of xmp-target-paths (multi-photo).
+--
+function Catalog:saveXmpMetadata( photoOrPhotos, otherStuff )
+    app:callingAssert( app:lrVersion() >= 5, "requires Lr5+" )
+    otherStuff = otherStuff or {}
+    local photos
+    local targetFiles
+    local fileTimeLookup
+    if photoOrPhotos.getRawMetadata then -- it's an lr-photo
+        photos = { photoOrPhotos }
+    else
+        photos = photoOrPhotos
+    end
+    if not otherStuff.noVal then
+        targetFiles = {}
+        fileTimeLookup = {}
+        local cache = otherStuff.cache
+        for i, photo in ipairs( photos ) do
+            local path = lrMeta:getRaw( photo, 'path', cache )
+            local file = xmpo:getTargetFile( path )
+            local attrs = LrFileUtils.fileAttributes( file )
+            targetFiles[#targetFiles + 1] = file
+            if attrs then -- file exists
+                fileTimeLookup[file] = attrs.fileModificationDate or error( "?" )
+            else
+                return false, "target file is missing, so save-metadata can not be validated"
+            end
+        end
+        if MAC_ENV then
+            LrTasks.sleep( 1.1 ) -- non-optimal, but solves the problem of non-precise file timestamps on Mac platform (through SDK).
+            -- i.e. current timestamp will be 1+ second advanced if saved 1+ seconds before save-metadata issued.
+        end
+    end
+    for i, photo in ipairs( photos ) do
+        photo:saveMetadata() -- queue up the request to save.
+    end
+    if not otherStuff.noVal then
+        LrTasks.sleep( .1 ) -- give save-metadata a half a chance..
+        local now = LrDate.currentTime()
+        local tooLate = now + ( otherStuff.tmo or ( 30 + ( #photos * .1 ) ) )
+        repeat
+            local allGood = true -- and all targets exist initially.
+            for file, fileTime in pairs( fileTimeLookup ) do
+                assert( fileTime ~= nil, "?" ) -- it's my understanding that iterator will skip it if nil.
+                local attrs = LrFileUtils.fileAttributes( file )
+                if not attrs then
+                    app:logW( "xmp target file disappeared" ) -- probably better to not let this be a deal killer (e.g. user deletes file whilst bg processing..).
+                    fileTimeLookup[file] = nil -- fine - I'll stop considering it. ###1
+                else
+                    local fileTime2 = attrs.fileModificationDate or error( "no fmd2" )
+                    if fileTime2 > fileTime then -- this test always works on Windows, and with non-otimal mac handling above, should always work on mac too, albeit less optimally.
+                        -- if ok, just stop checking it. once there are no more to check, it's done.
+                        fileTimeLookup[file] = nil -- remove from set ###1 OK to do in iter loop?
+                    else
+                        allGood = false
+                    end
+                end
+            end
+            if allGood then
+                return true, #photos == 1 and targetFiles[1] or targetFiles
+            elseif LrDate.currentTime() > tooLate then
+                return false, "Metadata save could not be validated in alotted time."
+            else
+                LrTasks.sleep( .1 )
+            end
+        until false -- until exit within.
+    else
+        return true
+    end
+end
+
+
+
 --- Save metadata for (multiple) specified photos.
 --
 --  @param              photos - photos to save metadata for, or nil to do all target photos.
@@ -1187,6 +1493,7 @@ end
 --  @param              alreadyInGridMode - multiple photos requires grid mode, if already in it, for sure, set this to true.
 --  @param              service - if a scope in here it will be used for captioning.
 --
+--  @usage              *** consider using save-xmp-metdata method instead if Lr5 or better - if it works, then it avoids the hoops inherent in this method.
 --  @usage              Windows + Mac (its the *read* metadata that's not supported on mac).
 --  @usage              Switch to grid mode first if desired, and select target photos first if possible.
 --  @usage              Cause metadata conflict for photos that are set to read-only, so make read-write before calling, if desired.
@@ -1514,7 +1821,8 @@ function Catalog:readPhotoMetadata( photo, photoPath, alreadyInLibraryModule, se
     end
 
     local mode
-    if WIN_ENV or app:lrVersion() >= 5 then -- mac supports read-metadata via sdk in Lr5+. Unlike save-metadata, the new fn seems to be reliable / working.
+    local newWay = ( app:lrVersion() >= 5 ) and not app:getPref( 'readMetadataTheOldWay' )
+    if WIN_ENV or newWay then -- mac supports read-metadata via sdk in Lr5+. Unlike save-metadata, the new fn seems to be reliable / working.
         mode = app:getPref( 'readMetadataMode' ) or 'auto'
     else
         mode = 'manual'
@@ -1536,7 +1844,7 @@ function Catalog:readPhotoMetadata( photo, photoPath, alreadyInLibraryModule, se
    
     -- Side effect: selection of single photo to be read.
     -- local s, m = cat:selectOnePhoto( photo ) - commented out 13/Sep/2011 16:47
-    if app:lrVersion() <= 4 or mode == 'manual' then
+    if app:lrVersion() <= 4 or mode == 'manual' or not newWay then
         local s = cat:assurePhotoIsSelected( photo, photoPath ) -- added 13/Sep/2011 16:47
         if s then
             app:logVerbose( "Photo selected for metadata read: ^1", photoPath )
@@ -1556,21 +1864,18 @@ function Catalog:readPhotoMetadata( photo, photoPath, alreadyInLibraryModule, se
     end
     
     -- must be as sure as possible we're in library module, view mode does not matter.
-    if mode == 'auto' and not alreadyInLibraryModule then
-        if app:lrVersion() <= 4 then
-            local s, m = gui:switchModule( 1, true ) -- because read-metadata keystroke not available in dev module, or not same.
-            if s then
-                app:logVerbose( "Issued command to switch to library module for ^1", photoPath ) -- just log final results in normal case.
-            else
-                return false, str:fmt( "Unable to switch to library module for ^1 because ^2", photoPath, m )
-            end
+    if mode == 'auto' and not alreadyInLibraryModule and not newWay then
+        local s, m = gui:switchModule( 1, true ) -- because read-metadata keystroke not available in dev module, or not same.
+        if s then
+            app:logVerbose( "Issued command to switch to library module for ^1", photoPath ) -- just log final results in normal case.
+        else
+            return false, str:fmt( "Unable to switch to library module for ^1 because ^2", photoPath, m )
         end
     end
     time = LrDate.currentTime() -- windows file times are high-precision and haven't needed a fudge factor so far.
     if mode == 'auto' then
-        if app:lrVersion() >= 5 then
-            -- ###1 comment added 9/Jun/2014 19:15 - am I sure this method works in develop module?
-            photo:readMetadata() -- initiate via Lr method. This method is optional when saving-photo-metadata, I guess I never had a similar problem reading it(?) ###3
+        if newWay then
+            photo:readMetadata() -- may not be reliable - jury still out (set old-way to true if probs..).
         else
             local s, m = app:sendWinAhkKeys( str:fmt( "{Alt Down}^1{Alt Up}", keySeq ) ) -- Read metadata - for one photo: seems reliable enough so not using the catalog function which includes a prompt.
             if s then
@@ -3347,6 +3652,8 @@ end
 
 --- Get directory containing catalog (just a tiny convenience/reminder function).
 --
+--  @usage beware: this returns catalog name too as 2nd return value.
+--
 function Catalog:getCatDir()
     local path = catalog:getPath()
     return LrPathUtils.parent( path ), LrPathUtils.removeExtension( LrPathUtils.leafName( path ) )
@@ -3460,9 +3767,223 @@ end
 
 
 
---- Delete photos.
+--- Remove photos from catalog (without deleting them).
+--
+--  @usage A compromise at best - still..
+--
+--  @param params table of parameters<br>
+--             call (Call, required) call or service...
+--             rmvPhotos (array, required) photos to remove.
+--             cache (LrMetadataCache, default=nil) more efficient if fields are cached..
+--
+--  @return status (boolean) true iff photos were removed; false => not. Note: no qualifying message (check call to see if canceled).
+--
+function Catalog:removePhotos( params )
+    local call = params.call or error( "no call" )
+    local rmvPhotos = params.rmvPhotos or error( "no rmv-photos" )
+    local rmvPhoto = rmvPhotos[1] -- I guess.
+    local cache = params.cache -- or nil.
+    if not tab:isArray( rmvPhotos ) then
+        app:logW( "Array of photos to remove is empty." ) -- check before calling to avoid this warning.
+        return true -- I guess, ###1.
+    end
+    local s, m = gui:gridMode( true ) -- mandatory (actually not necessary if only 1 photos, *but* library module is necessary, so might as well be grid.
+    if s then
+        app:logV( "Library module should be in grid mode now." )
+    else
+        app:logE( "Unable to put library module in grid mode - ^1", m )
+        return
+    end
+
+    for i, s in ipairs( catalog:getActiveSources() ) do
+        if cat:getSourceType( s ) ~= 'LrFolder' then
+            rmvPhoto, rmvPhotos = cat:_assureSources( rmvPhoto, rmvPhotos, cache )
+            if rmvPhoto then
+                break
+            else
+                app:logE( rmvPhotos ) -- errm
+                return
+            end
+        end
+    end
+
+    local s, q
+    for try=1,2 do
+        s, q = cat:assureSelectedPhotos( rmvPhotos, rmvPhoto, false ) -- must not be in collection in this case. Could have used the other deprecated method instead of all this song n' dance, same diff I guess.
+        if s then
+            break
+        elseif try ~= 2 then
+            rmvPhoto, rmvPhotos = cat:_assureSources( rmvPhoto, rmvPhotos, cache ) -- reminder: assure-sources only attempted upon entry if any source not folder, but there
+            -- is no guarantee that the folder selected houses the target photos, thus this part here..
+            if not rmvPhoto then -- probably ain't gonna work, but might as well give another crack and report the selection error instead.
+                app:logW( rmvPhotos ) -- warning should be enough in this context.
+            end
+        -- else, we tried..
+        end
+    end
+    
+    if s then
+        if q then -- qualifying message.
+            app:logV( q )
+        end
+        local saveXmp = app:getPref( 'saveXmpBeforeRemovingFromCatalog' ) -- ###1 (doc).
+        if saveXmp then
+            -- Catalo g : s aveMetadata( photos, preSelect, restoreSelect, alreadyInGridMode, service )
+            s, m = self:saveMetadata( rmvPhotos, false, false, true, call )
+        else
+            app:log( "Not saving xmp prior to removal from catalog - to have saved first, set pref: \"save-xmp-before-removing-from-catalog\"." )
+        end
+    else
+        app:logE( "Unable to assure photos to be removed from catalog were selected - ^1", q )
+        return
+    end
+    
+    app:log()
+    app:log( "^1 to be removed from catalog:", str:pluralize( #rmvPhotos, "photo" ) )
+    app:log( "-----------------------------------" )
+    local uuids = {}
+    for i, photo in ipairs( rmvPhotos ) do
+        local uuid = photo:getRawMetadata( 'uuid' )
+        local photoName = cat:getPhotoNameDisp( photo, true, cache )
+        local tp = catalog:findPhotoByUuid( uuid ) -- cheap insurance..
+        if tp == photo then
+            uuids[#uuids + 1] = uuid
+            --app:log( "Photo to be removed: ^1", photoName )
+            app:log( photoName )
+        else
+            Debug.pause( "?" )
+        end
+    end
+    app:log( "-----------------------------------" )
+    app:log()
+    if #uuids ~= #rmvPhotos then
+        app:logE( "Unable to assure removal from catalog will be successful - removal aborted." )
+        return
+    end
+    
+    local uuids = {}
+    for i, photo in ipairs( rmvPhotos ) do
+        local uuid = photo:getRawMetadata( 'uuid' )
+        local tp = catalog:findPhotoByUuid( uuid ) -- cheap insurance..
+        if tp == photo then -- ###1?
+            uuids[#uuids + 1] = uuid
+        else
+            Debug.pause( "?" )
+        end
+    end
+    if #uuids ~= #rmvPhotos then
+        app:logE( "Unable to assure removal from catalog will be successful." )
+        return
+    end
+    
+    local function isRemoved()
+        local removed = true
+        for i, uuid in ipairs( uuids ) do
+            local p = catalog:findPhotoByUuid( uuid )
+            if p then
+                app:log( "^1 has not been removed yet, maybe others too..", cat:getPhotoNameDisp( p, true ) )
+                removed = false
+                break
+            end
+        end
+        if removed then -- none remain in catalog.
+            app:log( "Photos were removed - as intended.." )
+            app:displayInfo( "photos were removed - good.." )
+            return true
+        else
+            app:displayInfo( "photos are not removed yet - try again.." )
+        end
+    end
+    
+    app:displayInfo( "^1 photos are to be removed from catalog", #rmvPhotos )
+    -- dive straight in to delete key - if in folder not collection, then said key will always bring up an Lr prompt, and so is safe to do without pre-prompt.
+    if WIN_ENV then
+        --local s, m = app:sendWinAhkKeys( "{Ctrl Down}{Alt Down}{Shift Down}{Del}{Shift Up}{Alt Up}{Ctrl Up}" ) - splat-delete.
+        s, m = app:sendWinAhkKeys( "{Del}", 1 ) -- simple delete, note: a lengthy delay needs to be there (.1 is not enough) for optimal performance, so Lr has a chance to present the removal dialog
+        -- before return, which holds up the plugin, which then sees photos removed immediately after return - works rather nicely actually. Could take more seconds on some machines (?).
+        -- .2 is enough on my machine, but 1 seems safer and plenty in most circumstances - could be that it needs more if lots of thinking required by Lr before initial presentation - oh well,
+        -- it still works in that case too, just less spiffily (user has to endure a plugin dialog box, and additional delay..).
+    else
+        s, m = app:sendMacEncKeys( "Delete", 1 ) -- ###1 test on Mac (not sure if 'Delete' is the correct term).
+    end
+    
+    if s then
+        app:log( "Delete key issued, and a moment's delay observed." )
+        if isRemoved() then -- awesome.
+            return true -- user never even sees a plugin dialog box - yeah now..
+        end
+    else
+        app:logE( m )
+        return
+    end
+    
+    app:initPref( 'dismissForRemovingPhotosFromCatalog', 5 )
+    assert( #uuids > 0, "no uuids" )
+    -- pre-reqs all squared away, now just need to confirm..
+    repeat
+        local vi = nil--{}
+        local ai = {}
+        ai[#ai + 1] = vf:row {
+            vf:push_button {
+                title = "Dismiss for",
+                action = function( button )
+                    LrDialogs.stopModalWithResult( button, 'other' )
+                end,
+            },
+            vf:edit_field {
+                value = app:getPrefBinding( 'dismissForRemovingPhotosFromCatalog' ),
+                width_in_digits = 2,
+                min = 1,
+                max = 99,
+                precision = 0,
+            },
+            vf:static_text {
+                title = "seconds",
+            },
+            vf:spacer { width = 20 },
+            vf:push_button {
+                title = "Show Log File",
+                action = function()
+                    app:showLogFile()
+                end
+            },
+        }
+        local msg = [[
+Dismiss this dialog box long enough to assure initially selected photos (as indicated in log file) have been removed from the catalog, if removed after dismissal time has elapsed, you'll be notified via Lr "bezel" (the black ribbon or emulation of it), and this dialog box won't be displayed again.
+
+If problems, then click 'Cancel' and report to plugin author - thanks.]]
+        local a = app:show{ confirm=msg,
+            subs=nil,
+            buttons=nil,--{ dia:btn( "OK", 'ok', false ) },
+            viewItems = vi,
+            accItems = ai,
+        }
+        if a == 'ok' then -- OK
+            if isRemoved() then
+                return true
+            end
+        elseif a == 'other' then -- dismiss-for.
+            local moment = app:getPref( 'dismissForRemovingPhotosFromCatalog' ) or 3
+            app:sleep( moment )
+            if shutdown then return end
+            if isRemoved() then
+                return true
+            end
+        elseif a == 'cancel' then
+            call:cancel()
+            return
+        else
+            app:error( "bad btn: '^1'", a )
+        end
+    until false
+    
+end
+
+
+
+--- Delete photos (remove photos from catalog AND delete files from disk).
 --  @usage *** ASSURE LIST OF FILES TO DELETE HAS ALREADY BEEN LOGGED, OTHERWISE THIS METHOD WILL MAKE A LIAR OUT OF THE CALLING CONTEXT.
---  @usage call to delete photos.S
+--  @usage call to delete photos.
 --  @usage depends on prefs: 'preservePicks', 'delayForManualMetadataSaveBox' (used for manual delete box).
 --  @usage as of 30/May/2014, will always prompt user before deleting - user can then choose manual or let plugin splatt delete them.
 --  @param params table of parameters<br>
@@ -3517,8 +4038,12 @@ function Catalog:deletePhotos( params )
         return true -- I guess.
     end
     
-    local s, m = cat:selectPhotos( nil, delPhotos, true, nil ) -- assure-folders, no cache.
+    local s, m = cat:assureSelectedPhotos( delPhotos, delPhotos[1] )
+
     if s then
+        if m then
+            app:logV( m )
+        end
         local buttons
         local subs
         local okButton
@@ -3744,9 +4269,10 @@ function Catalog:isMissing( photo, cache )
                 return true
             else
                 return true, "Original is missing, but smart preview is present" -- returns true for backward compatibility, but qualification in case one is interested.
+                -- to be clear: calling context must check qualifier to determine if smart preview is present, which may be sufficient for purpose.
             end
         else
-            return true
+            return true -- if source file not existing, then photo is missing.
         end
     end
 end
@@ -3990,24 +4516,77 @@ end
 
 
 
+--- Get filename preset specified by name.
+--
+--  @usage case sensitive.
+--
+--  @return uuidOrPath or nil.
+--
+function Catalog:getFilenamePreset( presetName )
+    for name, uuidOrPath in pairs( LrApplication.filenamePresets() ) do
+        if name == presetName then
+            return uuidOrPath
+        end
+    end
+end
+
+
+
 --- Get original filename corresponding to photo.
 --
---  @usage *** requires original filenames initialized via SQLiteroom, or the like.
+--  @usage *** requires original filenames initialized via SQLiteroom, or 'Original Filename' filenaming preset (which will be copied during init).
 --  @usage - consider checking for corresponding disk file if pertinent (e.g. photo object may be from stale info, and photo and/or file since deleted..).
+--  @usage - the reason it defaults to file over preset is because preset requires reset - don't want filenames coming from one place one time, then
+--      <br>    without warning, coming from another place the next time.
+--
+--  @param photo subject photo..
+--  @param preferPresetOverFile (boolean, default=false) true to use sqliteroom-compat file data, false to prefer filename preset (when both are available).
 --
 --  @return filename (string) nil if unavailable.
 --  @return excuse (string) nil if available, else reason for no filename.
 --
-function Catalog:getOriginalFilename( photo )
+function Catalog:getOriginalFilename( photo, preferPresetOverFile ) -- ###1 added support for preset-based acquistion 17/Sep/2014 0:44 need to release plugins which use it.
     local s, m = self:initForOriginalFilenames()
     if not s then
         return nil, m
     end
-    local filename = self.altLookup[str:to(photo.localIdentifier)]
-    if str:is( filename ) then
-        return filename
+    local fn1
+    local fn2
+    if self.fnPreset then
+        s, fn1 = LrTasks.pcall( photo.getNameViaPreset, photo, self.fnPreset )
+        if s then
+            -- ok
+        else
+            Debug.pause( "bad name via preset", fn1 )
+            fn1 = nil
+        end
+    end
+    if self.altLookup then
+        fn2 = self.altLookup[str:to(photo.localIdentifier)]
+        if fn2 ~= nil and type( fn2 ) == 'string' then
+            if #fn2 > 0 then
+                -- ok
+            else
+                Debug.pause( "empty string in ofn file" )
+                fn2 = nil
+            end
+        else
+            Debug.pause( "bad name via ofn file", fn2 )
+            fn2 = nil
+        end
+    end
+    -- note: fn2 guarantees correct extension, but fn1 guarantees freshness.
+    if fn1 and fn2 then
+        fn1 = LrPathUtils.addExtension( fn1, LrPathUtils.extension( fn2 ) )
+        Debug.pauseIf( fn1 ~= fn2, "ofn discrepancy, via preset", fn1, "via ofn file", fn2 )
+        return preferPresetOverFile and fn1 or fn2
+    elseif fn1 then
+        fn1 = LrPathUtils.addExtension( fn1, LrPathUtils.extension( photo:getFormattedMetadata( 'fileName' ) ) ) -- ###1 a guess, I guess (could original by NEF and photo be DNG?)
+        return fn1
+    elseif fn2 then
+        return fn2 -- with ext
     else
-        return nil, str:fmtx( "original filename does not exist in '^1' - consider restarting Lightroom using SQLiteroom-saved batch file (with 'Original Filenames' preset enabled).", self.ofile )
+        return nil, str:fmtx( "Original filename does not exist in '^1' - consider restarting Lightroom using SQLiteroom-saved batch file (with 'Original Filenames' preset enabled). Another possibility is that 'Original Filename' filenaming preset is not being recognized - maybe an Lr restart will remedy (if not, try deleting 'Original Filename.lrtemplate' file and restart Lr again - it will be recreated..).", self.ofile )
     end
 end
 
@@ -4020,27 +4599,94 @@ end
 --
 function Catalog:initForOriginalFilenames()
     if self.altLookup == nil then
-        local ofile = LrPathUtils.child( cat:getDir(), "Original Filenames.txt" )
+        local mb = {} -- message buffer
+        self.altLookup = false -- one try only
+        -- see about sqliteroom-compat orig filenames:
+        local ofile = LrPathUtils.child( cat:getDir(), "Original Filenames.txt" ) -- note: although get-dir returns 2 values, only the first is used in this context.
         if fso:existsAsFile( ofile ) then
             local s, alt = pcall( dofile, ofile )
             if s then
                 if tab:is( alt ) then
-                    app:log()
-                    app:log( "*** Getting original filenames from here: ^1", ofile )
-                    app:log()
+                    --app:log( "Original filenames are available from here: ^1", ofile )
                     self.ofile = ofile
-                    self.altLookup = alt
+                    self.altLookup = alt -- overwrite
                 else
-                    return nil, str:fmtx( "No original filenames in ^1", ofile )
+                    mb[#mb + 1] = str:fmtx( "No original filenames in ^1", ofile )
                 end
             else
-                return nil, str:fmtx( "Syntax error in original filenames file: '^1' - ^2", ofile, alt )
+                mb[#mb + 1] = str:fmtx( "Syntax error in original filenames file: '^1' - ^2", ofile, alt )
             end
         else
-            return nil, str:fmtx( "Original filenames file does not exist here: ^1 (written by SQLiteroom, if 'Original Filenames' preset is enabled upon startup).", ofile )
+            mb[#mb + 1] = str:fmtx( "Original filenames file does not exist here: ^1 (written by SQLiteroom, if 'Original Filenames' preset is enabled upon startup).", ofile )
         end
+        -- see about using fn preset:
+        local preset = self:getFilenamePreset( "Original Filename" )
+        if preset then -- preset exists, but may not be ready for prime time, yet (new presets don't work in plugin until Lr restarted).
+            local photo = self:getAnyPhoto()
+            if photo then
+                local s, fn = LrTasks.pcall( photo.getNameViaPreset, photo, preset )
+                if s then -- hopefully, is OK.
+                    self.fnPreset = preset
+                else
+                    mb[#mb + 1] = str:fmtx( "Unable to get original filename using 'Original Filename' preset - if it's recently been created, you'll need to restart Lightroom. Error message: ^1", fn )
+                end
+            else
+                mb[#mb + 1] = str:fmtx( "No photos in catalog, so unable to test original filename preset." )
+            end
+        else
+            local srcFile, isA = app:getFrameworkPath( "Catalog/Support/Original Filename.lrtemplate" ) -- must exist
+            if srcFile then
+                local destDir, orMsg = lightroom:getPresetDir( "Filename Templates" )
+                if destDir then -- exists
+                    local destFile = LrPathUtils.child( destDir, "Original Filename.lrtemplate" )
+                    if not LrFileUtils.exists( destFile ) then
+                        local s, m = fso:copyFile( srcFile, destFile ) -- dir exists, overwrite not required.
+                        if s then
+                            -- note: normally, user will not have sqliteroom file, since it's no longer required, so a verbose message should suffice.
+                            -- if user does not have the sqliteroom file, then this message will be returned and should be issued as a warning.
+                            mb[#mb + 1] = str:fmtx( "Copied original filenaming preset to '^1' - you must restart Lightroom so it can be used by this plugin.", destFile )
+                        else
+                            mb[#mb + 1] = m
+                        end
+                    else
+                        mb[#mb + 1] = str:fmtx( "Original filenaming preset '^1' already exists - you must restart Lightroom so it can be used by this plugin.", destFile )
+                    end
+                else
+                    mb[#mb + 1] = orMsg
+                end
+            else
+                mb[#mb + 1] = str:fmtx( "Unable to locate framework file: ^1", isA ) -- path where it was expected.
+            end
+        end
+        if self.fnPreset then
+            if self.altLookup then
+                app:log( "'Original Filename' filenaming preset is available to use for obtaining original filenames, and may trump those in '^1' (depends on plugin/options..).", self.ofile )
+            else
+                app:log( "'Original Filename' filenaming preset will be used to obtain original filenames." )
+            end
+        else
+            if self.altLookup then -- this'll do
+                app:log( "'Original Filename' filenaming preset is NOT available to use for obtaining original filenames, so they will come from here: '^1'", self.ofile )
+            else
+                mb[#mb + 1] = str:fmtx( "You need to have one of two things for original filename support: 'Original Filenames' filenaming preset (restart Lightroom after it's been created), or SQLiteroom-compatible file: ^1", ofile )
+            end
+        end
+        if self.altLookup or self.fnPreset then -- we got one or the other, which is all we need.
+            if #mb > 0 then -- stuff happened, but hardly worth mentioning if all's well..
+                app:logV( table.concat( mb, "\n \n" ) )
+            end
+            return true
+        else
+            assert( #mb > 0, "no mb" )
+            return false, table.concat( mb, "\n \n" ) -- hopefully, this will be logged.
+        end
+    -- else initialized, or a failed attempt was made.
     end
-    return true
+    if self.fnPreset or self.altLookup then
+        return true
+    else
+        return false, "Original filenames not initialized - something should have been logged about it.."    
+    end
 end
 Catalog.initOriginalFilenames = Catalog.initForOriginalFilenames -- function Catalog:initOriginalFilenames( ... ) - probably a better name.
 
@@ -4191,6 +4837,33 @@ end
 --
 function Catalog:initSmartColls()
     self.smartCollPhotoSet = {}
+end
+
+
+
+--- Get array of all collections in a set, optionally: smart collections too.
+--
+function Catalog:getCollsInCollSet( set, smToo )
+    local colls = {}
+    local function doColls( moreColls )
+        if smToo then
+            tab:appendArray( colls, moreColls )
+        else
+            for i, coll in ipairs( moreColls ) do
+                if not coll:isSmartCollection() then
+                    colls[#colls + 1] = coll
+                end
+            end
+        end
+    end
+    local function doSet( theSet )
+        doColls( theSet:getChildCollections() )
+        for i, v in ipairs( theSet:getChildCollectionSets() ) do
+            doSet( v )
+        end
+    end
+    doSet( set )
+    return colls 
 end
 
 

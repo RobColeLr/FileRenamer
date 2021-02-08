@@ -117,6 +117,7 @@ function Number:isNonZero( value )
         return false
     end
 end
+Number.is = Number.isNonZero -- function Number:is(...)
 
 
 

@@ -182,6 +182,7 @@ function Init:framework()
     gbl:initVar( 'Collections', objectFactory:frameworkModule( 'Catalog/Collections' ), reloading )
     gbl:initVar( 'Previews', objectFactory:frameworkModule( 'Catalog/Previews' ), reloading )
     gbl:initVar( 'Image', objectFactory:frameworkModule( 'Image/Image' ), reloading )
+    gbl:initVar( 'Xmp', objectFactory:frameworkModule( 'Image/Xmp' ), reloading ) -- added 6/Dec/2014 21:27
     gbl:initVar( 'Gui', objectFactory:frameworkModule( 'Gui/Gui' ), reloading )
     gbl:initVar( 'View', objectFactory:frameworkModule( 'Gui/View' ), reloading )
     gbl:initVar( 'DebugScript', objectFactory:frameworkModule( 'System/DebugScript' ), reloading )
@@ -237,7 +238,9 @@ function Init:framework()
     gbl:initVar( 'intercom', objectFactory:newObject( Intercom ), reloading ) -- ###1 some plugins may be recreating this (note: polling-interval defaults to .1).
     gbl:initVar( 'luaText', objectFactory:newObject( LuaText ), reloading )
     gbl:initVar( 'lrMeta', objectFactory:newObject( LrMetadata ), reloading ) -- std @20/Jul/2012.
-    gbl:initVar( 'guards', {}, reloading ) -- ###2 Dont know if it helps having guards be global or not, but I've become superstitious...
+    gbl:initVar( 'xmpo', objectFactory:newObject( Xmp ), reloading ) -- added 6/Dec/2014 21:27
+    gbl:initVar( 'guards', {}, reloading ) -- ###2 Dont know if it helps having guards be global or not, but I've become superstitious..
+    -- gbl:initVar( 'gates', {}, reloading ) - gates are created in calling context and passed in. there is room for improvement, but I may not be making it.
     if gbl:getValue( 'CustomMetadata' ) then
         gbl:initVar( 'custMeta', objectFactory:newObject( CustomMetadata ), reloading )
     end
